@@ -1,0 +1,12 @@
+{
+  "name": "plk-master-fz-dashboard",
+  "version": "1.0.0",
+  "description": "PLK Master FZ File Dashboard",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=16"
+  }
+}

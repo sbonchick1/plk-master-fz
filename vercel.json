@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "builds": [
+    { "src": "api/renovations.js", "use": "@vercel/node" },
+    { "src": "index.html", "use": "@vercel/static" }
+  ],
+  "routes": [
+    { "src": "/api/renovations", "dest": "/api/renovations.js" },
+    { "src": "/", "dest": "/index.html" }
+  ]
+}
