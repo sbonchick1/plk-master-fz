@@ -38,7 +38,7 @@ function sfRequest(path, method, body) {
       method,
       headers: {
         'Authorization': `Bearer ${SF_PAT}`,
-        'X-Snowflake-Authorization-Token-Type': 'KEYPAIR_JWT',
+        'X-Snowflake-Authorization-Token-Type': 'PROGRAMMATIC_ACCESS_TOKEN',
         'User-Agent': 'plk-master-fz/1.0',
         'Accept': 'application/json',
         ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {})
