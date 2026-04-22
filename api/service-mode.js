@@ -8,16 +8,7 @@ const SF_SCHEMA    = process.env.SF_SCHEMA     || 'TLOG';
 const SF_ROLE      = process.env.SF_ROLE       || 'ANALYST_PLK';
 
 const SERVICE_MODE_SQL = `
-SELECT
-    store_id,
-    service_mode_category,
-    SUM(cy_category_sales)    AS cy_category_sales,
-    SUM(cy_store_total_sales) AS cy_store_total_sales
-FROM brand_plk.pmix.DAILY_SERVICE_MODE_COMPARABLE_SALES_AND_TRAFFIC
-WHERE country_code = 'US'
-  AND date BETWEEN '2025-12-29' AND DATEADD(DAY, -1, CURRENT_DATE())
-GROUP BY store_id, service_mode_category
-ORDER BY store_id, service_mode_category
+SELECT * FROM brand_plk.pmix.DAILY_SERVICE_MODE_COMPARABLE_SALES_AND_TRAFFIC LIMIT 2
 `.trim();
 
 // ── POST SQL to Snowflake, return parsed JSON response
@@ -89,7 +80,7 @@ async function runQuery(sql) {
     (page.body.data || []).forEach(r => allRows.push(r));
   }
 
-  return allRows;
+  return { rows: allRows, meta: result.resultSetMetaData };
 }
 
 // ── Pivot rows → [{plk, dt_pct, eatin_pct, takeout_pct, delivery_pct}]
@@ -126,9 +117,9 @@ module.exports = async (req, res) => {
   }
 
   try {
-    const rows = await runQuery(SERVICE_MODE_SQL);
-    const stores = pivotRows(rows);
-    res.status(200).json({ stores, count: stores.length });
+    const { rows, meta } = await runQuery(SERVICE_MODE_SQL);
+    const cols = (meta && meta.rowType) ? meta.rowType.map(c => c.name) : [];
+    res.status(200).json({ columns: cols, sample: rows.slice(0,2) });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
