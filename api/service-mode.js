@@ -10,21 +10,13 @@ const SF_ROLE      = process.env.SF_ROLE       || 'ANALYST_PLK';
 const SERVICE_MODE_SQL = `
 SELECT
     store_id,
-    fz_name,
-    division,
-    dma,
     service_mode_category,
     SUM(cy_category_sales)    AS cy_category_sales,
-    SUM(cy_store_total_sales) AS cy_store_total_sales,
-    ROUND(
-      CASE WHEN SUM(cy_store_total_sales) > 0
-           THEN SUM(cy_category_sales) / SUM(cy_store_total_sales) * 100
-           ELSE NULL END, 2
-    ) AS cy_sales_mix_pct
+    SUM(cy_store_total_sales) AS cy_store_total_sales
 FROM brand_plk.pmix.DAILY_SERVICE_MODE_COMPARABLE_SALES_AND_TRAFFIC
 WHERE country_code = 'US'
   AND date BETWEEN '2025-12-29' AND DATEADD(DAY, -1, CURRENT_DATE())
-GROUP BY store_id, fz_name, division, dma, service_mode_category
+GROUP BY store_id, service_mode_category
 ORDER BY store_id, service_mode_category
 `.trim();
 
@@ -101,7 +93,7 @@ async function runQuery(sql) {
 }
 
 // ── Pivot rows → [{plk, dt_pct, eatin_pct, takeout_pct, delivery_pct}]
-// Columns: [0]=store_id [4]=service_mode_category [7]=cy_sales_mix_pct (0-100)
+// Columns: [0]=store_id [1]=service_mode_category [2]=cy_category_sales [3]=cy_store_total_sales
 function pivotRows(rows) {
   const CAT_MAP = {
     'DRIVE THRU': 'dt_pct',
@@ -113,12 +105,13 @@ function pivotRows(rows) {
   rows.forEach(row => {
     const plk = parseInt(row[0]);
     if (isNaN(plk) || plk <= 0) return;
-    const cat = String(row[4] || '').toUpperCase().trim();
+    const cat = String(row[1] || '').toUpperCase().trim();
     const key = CAT_MAP[cat];
     if (!key) return;
     if (!stores[plk]) stores[plk] = { plk };
-    const pct = parseFloat(row[7]);
-    stores[plk][key] = isNaN(pct) ? null : pct / 100;
+    const catSales   = parseFloat(row[2]) || 0;
+    const totalSales = parseFloat(row[3]) || 0;
+    stores[plk][key] = totalSales > 0 ? catSales / totalSales : null;
   });
   return Object.values(stores);
 }
