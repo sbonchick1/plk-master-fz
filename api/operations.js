@@ -200,7 +200,13 @@ module.exports = async (req, res) => {
   try {
     const rows = await runQuery(OPERATIONS_SQL);
     const stores = pivotOps(rows);
-    res.status(200).json({ stores, count: stores.length });
+
+    // Extract the 3 unique round labels from raw rows, sorted desc: [rtd, r3, r2]
+    const uniquePeriods = [...new Set(rows.map(r => r[3]).filter(Boolean))];
+    uniquePeriods.sort((a, b) => periodSort(a, b));
+    const rounds = uniquePeriods.slice(0, 3); // [most recent, second, third]
+
+    res.status(200).json({ stores, count: stores.length, rounds });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
