@@ -80,6 +80,7 @@ function sfRequest(path, method, body) {
         'X-Snowflake-Authorization-Token-Type': 'PROGRAMMATIC_ACCESS_TOKEN',
         'User-Agent': 'plk-master-fz/1.0',
         'Accept': 'application/json',
+        'Accept-Encoding': 'identity',
         ...(payload ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(payload) } : {})
       }
     };
