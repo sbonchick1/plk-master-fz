@@ -1,4 +1,5 @@
 const https = require('https');
+const zlib  = require('zlib');
 
 const SF_ACCOUNT   = process.env.SF_ACCOUNT   || 'RBI-RBI_USE1';
 const SF_PAT       = process.env.SF_PAT;
@@ -85,11 +86,31 @@ function sfRequest(path, method, body) {
       }
     };
     const req = https.request(opts, (res) => {
-      let raw = '';
-      res.on('data', d => raw += d);
+      const enc = res.headers['content-encoding'] || '';
+      const chunks = [];
+      res.on('data', d => chunks.push(typeof d === 'string' ? Buffer.from(d) : d));
       res.on('end', () => {
-        try { resolve({ status: res.statusCode, body: JSON.parse(raw) }); }
-        catch(e) { reject(new Error('JSON parse error: ' + raw.slice(0, 200))); }
+        const buf = Buffer.concat(chunks);
+        const decode = (b) => {
+          try { return JSON.parse(b.toString('utf8')); }
+          catch(e) { throw new Error('JSON parse error: ' + b.slice(0,200).toString('utf8')); }
+        };
+        if (enc.includes('gzip')) {
+          zlib.gunzip(buf, (err, decompressed) => {
+            if (err) return reject(new Error('gunzip error: ' + err.message));
+            try { resolve({ status: res.statusCode, body: decode(decompressed) }); }
+            catch(e) { reject(e); }
+          });
+        } else if (enc.includes('deflate')) {
+          zlib.inflate(buf, (err, decompressed) => {
+            if (err) return reject(new Error('inflate error: ' + err.message));
+            try { resolve({ status: res.statusCode, body: decode(decompressed) }); }
+            catch(e) { reject(e); }
+          });
+        } else {
+          try { resolve({ status: res.statusCode, body: decode(buf) }); }
+          catch(e) { reject(e); }
+        }
       });
     });
     req.on('error', reject);
