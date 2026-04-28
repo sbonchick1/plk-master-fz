@@ -338,7 +338,14 @@ const server = http.createServer(async (req, res) => {
     const ext = path.extname(filePath);
     const types = { '.html':'text/html', '.js':'application/javascript',
                     '.css':'text/css', '.json':'application/json' };
-    res.writeHead(200, { 'Content-Type': types[ext] || 'text/plain' });
+    const headers = { 'Content-Type': types[ext] || 'text/plain' };
+    // Never cache HTML — always serve fresh so JS changes take effect immediately
+    if (ext === '.html') {
+      headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+      headers['Pragma'] = 'no-cache';
+      headers['Expires'] = '0';
+    }
+    res.writeHead(200, headers);
     res.end(data);
   });
 });
