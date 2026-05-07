@@ -238,6 +238,35 @@ const server = http.createServer(async (req, res) => {
             console.log('[state] Saved (' + (body.length / 1024).toFixed(0) + ' KB)');
             res.writeHead(200, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ ok: true }));
+
+            // ── Patch SR_DEFAULT in index.html so hard-reloads always show current data ──
+            // Only runs for full Generate saves (not the lightweight _plkListOnly alignment scan).
+            try {
+              const parsed2 = JSON.parse(body);
+              if (parsed2.sr && Array.isArray(parsed2.sr) && parsed2.sr.length > 0 && !parsed2._plkListOnly) {
+                const KEEP = new Set(['plk','country','status','div','dma_id','rvp','strategy_owner',
+                  'fbp','op_mgr','gm','loc_type','orig_open','fru','op','fg','city','state','county',
+                  'postal','address','dma','arch_type','fg_num','drive_thru_type','royalty','adfund',
+                  'urb','subcluster','deal_type','ext_image','image_type','reno_image','reno_date',
+                  'reno_scope','f2f','fa_exp','fy2021','fy2022','fy2023','fy2024','fy2025','ddl','lat','lon']);
+                const slim = parsed2.sr.map(s => {
+                  const o = {};
+                  KEEP.forEach(k => { if (s[k] != null) o[k] = s[k]; });
+                  return o;
+                });
+                const htmlPath = path.join(__dirname, 'index.html');
+                const html = fs.readFileSync(htmlPath, 'utf8');
+                const patched = html.replace(/const SR_DEFAULT=\[.*\];/, 'const SR_DEFAULT=' + JSON.stringify(slim) + ';');
+                if (patched !== html) {
+                  fs.writeFileSync(htmlPath, patched, 'utf8');
+                  console.log('[state] Patched SR_DEFAULT in index.html → ' + slim.length + ' stores');
+                } else {
+                  console.warn('[state] SR_DEFAULT pattern not found in index.html — skipping patch');
+                }
+              }
+            } catch(patchErr) {
+              console.error('[state] SR_DEFAULT patch error:', patchErr.message);
+            }
           }
         });
       } catch(e) {
