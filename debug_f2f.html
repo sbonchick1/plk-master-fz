@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>F2F Debug</title>
+<title>F2F Debug Tool</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   body{font-family:monospace;font-size:13px;background:#111;color:#eee;padding:16px;margin:0;}
@@ -258,8 +258,9 @@ async function runDebug(){
     log(`    col AA (storeFRU)   = "${storeFruNorm||'NULL'}"`);
     log(`    col AB (seller)     = "${selNorm||'NULL'}"  raw="${seller||'NULL'}"`);
 
-    if(!selNorm||!storeFruNorm){ log('    → SKIP: null value','warn'); return; }
+    if(!storeFruNorm){ log('    → SKIP: storeFRU is null (no AA value)','warn'); return; }
     if(selNorm===storeFruNorm){ log('    → SKIP: AA = AB (same entity, no transfer)','ok'); return; }
+    // Note: null seller ≠ real storeFRU → qualifies as F2F per Excel formula
     if(q2==null){ log('    → SKIP: bad effective date','warn'); return; }
 
     log(`    → AA ≠ AB  — this row is an F2F candidate`,'err');
