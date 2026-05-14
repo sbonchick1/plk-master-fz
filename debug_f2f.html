@@ -212,7 +212,7 @@ async function runDebug(){
   if(plkCol==null||statusCol==null||effectiveCol==null){ log('Missing required columns','err'); return; }
 
   const getSeller=row=>{
-    if(subTypeCol!=null&&String(row[subTypeCol]||'').toLowerCase().includes('refranchise')) return 'PLK Company Ops';
+    if(subTypeCol!=null&&String(row[subTypeCol]||'').trim().toLowerCase()==='refranchise') return 'PLK Company Ops';
     if(fgIdCol==null||!hasFGMap) return null;
     const fgId=parseInt(row[fgIdCol]); if(isNaN(fgId))return null;
     const fg=FG_MAP[fgId]; return fg?fg.fru:null;
