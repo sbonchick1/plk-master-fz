@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>F2F Debugger</title>
+<title>F2F Debugger Tool</title>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <style>
   body{font-family:monospace;font-size:13px;background:#111;color:#eee;padding:16px;margin:0;}
@@ -212,7 +212,7 @@ async function runDebug(){
   if(plkCol==null||statusCol==null||effectiveCol==null){ log('Missing required columns','err'); return; }
 
   const getSeller=row=>{
-    if(subTypeCol!=null&&String(row[subTypeCol]||'').trim().toLowerCase()==='refranchise') return 'PLK Company Ops';
+    if(subTypeCol!=null&&String(row[subTypeCol]||'').toLowerCase().includes('refranchise')) return 'PLK Company Ops';
     if(fgIdCol==null||!hasFGMap) return null;
     const fgId=parseInt(row[fgIdCol]); if(isNaN(fgId))return null;
     const fg=FG_MAP[fgId]; return fg?fg.fru:null;
