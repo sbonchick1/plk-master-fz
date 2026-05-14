@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>F2F Debug</title>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<style>
+  body{font-family:monospace;font-size:13px;background:#111;color:#eee;padding:16px;margin:0;}
+  h2{color:#f90;margin:0 0 10px;}
+  label{color:#aaa;display:block;margin-bottom:3px;font-size:12px;}
+  input[type=number]{background:#222;color:#fff;border:1px solid #555;padding:4px 8px;font-size:13px;width:90px;border-radius:4px;}
+  input[type=file]{color:#ccc;margin:3px 0 0;}
+  button{background:#f90;color:#111;border:none;padding:7px 18px;font-size:13px;font-weight:bold;cursor:pointer;border-radius:4px;margin-top:10px;}
+  button:hover{background:#ffb300;}
+  .grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:10px 0;}
+  .box{background:#1a1a1a;border:1px solid #333;padding:10px;border-radius:4px;}
+  #out{margin-top:14px;white-space:pre-wrap;line-height:1.6;}
+  .ok{color:#4f4;} .warn{color:#fa0;} .err{color:#f44;} .info{color:#8cf;} .sep{color:#444;}
+</style>
+</head>
+<body>
+<h2>F2F Date Debug Tool</h2>
+
+<div style="background:#1a1a1a;border:1px solid #333;padding:12px;border-radius:4px;">
+  <label>PLK Store #: <input type="number" id="plkNum" value="1532" min="1"></label>
+  <div class="grid" style="margin-top:10px;">
+    <div class="box">
+      <label>1. Alignment File (.xlsx / .csv)<br><small style="color:#666;">Source of REPORT_UNIT_NM → col AA</small></label>
+      <input type="file" id="alignFile" accept=".csv,.xlsx">
+    </div>
+    <div class="box">
+      <label>2. Franchise Group View (.csv)<br><small style="color:#666;">Source of Reporting Unit → col AB</small></label>
+      <input type="file" id="fgFile" accept=".csv">
+    </div>
+    <div class="box">
+      <label>3. Agreement View (.csv)<br><small style="color:#666;">Rows: Status, Eff Date, Sub Type, FG#</small></label>
+      <input type="file" id="agreeFile" accept=".csv">
+    </div>
+  </div>
+  <button onclick="runDebug()">Run F2F Debug</button>
+</div>
+
+<div id="out">Upload all 3 files and click Run.</div>
+
+<script>
+const out = document.getElementById('out');
+function log(msg, cls=''){const d=document.createElement('div');if(cls)d.className=cls;d.textContent=msg;out.appendChild(d);}
+function sep(){log('─'.repeat(72),'sep');}
+
+// ── CSV parser ────────────────────────────────────────────────────────────
+function parseCSV(text){
+  const rows=[];let row=[],field='',inQ=false;
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(inQ){if(c==='"'){if(text[i+1]==='"'){field+='"';i++;}else inQ=false;}else field+=c;}
+    else{if(c==='"')inQ=true;else if(c===','){row.push(field);field='';}
+    else if(c==='\n'){row.push(field);rows.push(row);row=[];field='';}
+    else if(c!=='\r')field+=c;}
+  }
+  if(field||row.length){row.push(field);rows.push(row);}
+  return rows;
+}
+
+function findHeader(aoa, required, maxRows=6){
+  for(let i=0;i<Math.min(aoa.length,maxRows);i++){
+    const row=aoa[i];if(!row)continue;
+    const low=row.map(c=>c?String(c).toLowerCase().trim():'');
+    if(required.every(r=>low.some(h=>h.includes(r))))return i;
+  }
+  return -1;
+}
+
+const dateKey=v=>{
+  if(!v)return null;let d;
+  if(v instanceof Date)d=v;
+  else if(typeof v==='number')d=new Date(Math.round((v-25569)*86400000));
+  else d=new Date(String(v).trim());
+  return isNaN(d.getTime())?null:d.getTime();
+};
+const fmtD=v=>{
+  const k=dateKey(v);if(k==null)return'-';const d=new Date(k);
+  return(d.getMonth()+1).toString().padStart(2,'0')+'/'
+        +d.getDate().toString().padStart(2,'0')+'/'+d.getFullYear();
+};
+
+// ── Read file as 2D array (handles both CSV and XLSX) ────────────────────
+async function readAoa(file){
+  const name = (file.name||'').toLowerCase();
+  if(name.endsWith('.xlsx')||name.endsWith('.xls')){
+    const buf = await file.arrayBuffer();
+    const wb  = XLSX.read(buf, {type:'array', cellDates:true});
+    const ws  = wb.Sheets[wb.SheetNames[0]];
+    return XLSX.utils.sheet_to_json(ws, {header:1, defval:null, raw:true});
+  }
+  const text = await file.text();
+  return parseCSV(text);
+}
+
+// ── Parse Alignment file → get REPORT_UNIT_NM for target PLK ─────────────
+async function getStoreFRU(file, plk){
+  const aoa  = await readAoa(file);
+  // Look for REST_NO and REPORT_UNIT_NM columns
+  const hr = findHeader(aoa, ['rest_no'], 6);
+  if(hr < 0){ log('Alignment: header not found (need REST_NO column)', 'err'); return null; }
+  const hRow = aoa[hr];
+  log(`Alignment header row ${hr}: ${JSON.stringify(hRow.slice(0,10))}`, 'sep');
+
+  let restCol=null, fruCol=null;
+  hRow.forEach((h,i)=>{
+    if(!h)return; const hl=String(h).toLowerCase().trim();
+    if(hl==='rest_no'||hl==='restaurant number'||hl==='restaurant no'||hl==='plk#') restCol=i;
+    else if(hl==='report_unit_nm'||hl==='reporting unit'||hl==='franchise reporting unit') fruCol=i;
+  });
+
+  log(`Alignment cols → REST_NO:${restCol}  REPORT_UNIT_NM:${fruCol}`, fruCol!=null?'ok':'warn');
+  if(restCol==null){ log('Alignment: REST_NO column not found','err'); return null; }
+  if(fruCol==null){ log('Alignment: REPORT_UNIT_NM / Reporting Unit column not found','warn'); }
+
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row||row[restCol]==null)continue;
+    if(parseInt(row[restCol])===plk){
+      const fru = fruCol!=null ? String(row[fruCol]||'').trim() : null;
+      log(`PLK ${plk} found in Alignment → REPORT_UNIT_NM="${fru}"`, fru?'ok':'warn');
+      return fru||null;
+    }
+  }
+  log(`PLK ${plk} NOT found in Alignment file`,'err');
+  return null;
+}
+
+// ── Parse FG CSV → FG_MAP ─────────────────────────────────────────────────
+async function parseFG(file){
+  const text = await file.text();
+  const aoa  = parseCSV(text);
+  const hr   = findHeader(aoa, ['id','reporting unit'], 5);
+  if(hr<0){ log('FG file: header not found','err'); return {}; }
+  const hRow = aoa[hr];
+  let idCol=null,fruCol=null,fgNameCol=null,opCol=null;
+  hRow.forEach((h,i)=>{
+    if(!h)return; const hl=String(h).toLowerCase().trim();
+    if(hl==='id') idCol=i;
+    else if(hl==='reporting unit') fruCol=i;
+    else if(hl==='franchise group name') fgNameCol=i;
+    else if(hl==='reporting operator') opCol=i;
+  });
+  log(`FG cols → id:${idCol}  reporting_unit:${fruCol}  fg_name:${fgNameCol}`, idCol!=null&&fruCol!=null?'ok':'warn');
+  if(idCol==null){ log('FG file: "Id" column not found','err'); return {}; }
+  const map={};
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row||row[idCol]==null)continue;
+    const id=parseInt(row[idCol]); if(isNaN(id)||id<=0)continue;
+    map[id]={
+      fg:  fgNameCol!=null?String(row[fgNameCol]||'').trim()||null:null,
+      fru: fruCol!=null   ?String(row[fruCol]   ||'').trim()||null:null,
+      op:  opCol!=null    ?String(row[opCol]    ||'').trim()||null:null,
+    };
+  }
+  log(`FG map built: ${Object.keys(map).length} entries`,'ok');
+  return map;
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────
+async function runDebug(){
+  out.innerHTML='';
+  const plk       = parseInt(document.getElementById('plkNum').value);
+  const alignFile = document.getElementById('alignFile').files[0];
+  const fgFile    = document.getElementById('fgFile').files[0];
+  const agreeFile = document.getElementById('agreeFile').files[0];
+
+  if(isNaN(plk))   { log('Enter a valid PLK number.','err'); return; }
+  if(!alignFile)   { log('Select Alignment File.','err'); return; }
+  if(!fgFile)      { log('Select Franchise Group View CSV.','err'); return; }
+  if(!agreeFile)   { log('Select Agreement View CSV.','err'); return; }
+
+  log(`=== F2F Debug for PLK ${plk} ===`,'info'); sep();
+
+  // STEP 1 — storeFRU from Alignment
+  log('STEP 1 — Col AA: Most Recent Franchisee (REPORT_UNIT_NM from Alignment File)','info');
+  const storeFRU     = await getStoreFRU(alignFile, plk);
+  const storeFruNorm = storeFRU ? storeFRU.trim().toLowerCase() : null;
+  log(`→ storeFRU = "${storeFRU||'NULL'}"  (normalized: "${storeFruNorm||'NULL'}")`, storeFruNorm?'ok':'err');
+
+  sep();
+
+  // STEP 2 — FG_MAP from FG View
+  log('STEP 2 — Col AB source: Franchise Group View (Reporting Unit)','info');
+  const FG_MAP   = await parseFG(fgFile);
+  const hasFGMap = Object.keys(FG_MAP).length > 0;
+
+  sep();
+
+  // STEP 3 — Parse Agreement View
+  log('STEP 3 — Agreement View rows for PLK '+plk,'info');
+  const agreeText = await agreeFile.text();
+  const aoa       = parseCSV(agreeText);
+  const hr        = findHeader(aoa, ['restaurant number','agreement status'], 5);
+  if(hr<0){ log('Agreement View: header not found','err'); return; }
+
+  const hRow = aoa[hr];
+  let plkCol=null,statusCol=null,effectiveCol=null,subTypeCol=null,fgIdCol=null,fa_expCol=null;
+  hRow.forEach((h,i)=>{
+    if(!h)return; const hl=String(h).toLowerCase().trim();
+    if(hl==='restaurant number'||hl==='restaurant no'||hl==='plk#') plkCol=i;
+    else if(hl==='agreement status') statusCol=i;
+    else if(hl==='effective date') effectiveCol=i;
+    else if(hl==='_agreement expiration date'||hl==='agreement expiration date') fa_expCol=i;
+    else if(hl==='agreement sub type'||hl==='agreement subtype') subTypeCol=i;
+    else if(hl.startsWith('franchise group')) fgIdCol=i;
+  });
+  log(`Agreement cols → plk:${plkCol} status:${statusCol} eff:${effectiveCol} subType:${subTypeCol} fgId:${fgIdCol}`,
+    plkCol!=null&&statusCol!=null&&effectiveCol!=null?'ok':'err');
+  if(plkCol==null||statusCol==null||effectiveCol==null){ log('Missing required columns','err'); return; }
+
+  const getSeller=row=>{
+    if(subTypeCol!=null&&String(row[subTypeCol]||'').trim().toLowerCase()==='refranchise') return 'PLK Company Ops';
+    if(fgIdCol==null||!hasFGMap) return null;
+    const fgId=parseInt(row[fgIdCol]); if(isNaN(fgId))return null;
+    const fg=FG_MAP[fgId]; return fg?fg.fru:null;
+  };
+
+  const rows=[];
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row||row[plkCol]==null)continue;
+    if(parseInt(row[plkCol])===plk) rows.push(row);
+  }
+  log(`Found ${rows.length} row(s) for PLK ${plk}`, rows.length>0?'ok':'err');
+  if(rows.length===0) return;
+
+  sep();
+
+  // Show all rows
+  log('ALL ROWS:','info');
+  rows.forEach((row,i)=>{
+    const status  = String(row[statusCol]||'').trim();
+    const eff     = fmtD(row[effectiveCol]);
+    const subType = subTypeCol!=null?String(row[subTypeCol]||'').trim():'n/a';
+    const fgRaw   = fgIdCol!=null?row[fgIdCol]:'n/a';
+    const seller  = getSeller(row);
+    const selNorm = seller?seller.trim().toLowerCase():null;
+    const same    = selNorm!=null&&storeFruNorm!=null&&selNorm===storeFruNorm;
+    const cls     = status.toLowerCase()==='finalized'?(same?'ok':'warn'):'';
+    log(`  [${i}] status="${status}"  eff=${eff}  subType="${subType}"  FG#=${fgRaw}  col_AB_seller="${seller||'NULL'}"  AA=AB? ${same?'YES → skip':'NO → F2F candidate'}`,cls);
+  });
+
+  sep();
+
+  // F2F calculation
+  log('F2F CALCULATION:','info');
+  let latestF2F=null, latestF2FKey=-1;
+
+  rows.forEach((row,i)=>{
+    if(String(row[statusCol]||'').trim().toLowerCase()!=='finalized') return;
+    const seller  = getSeller(row);
+    const selNorm = seller?seller.trim().toLowerCase():null;
+    const q2      = dateKey(row[effectiveCol]);
+
+    log(`\n  Row [${i}]  status=FINALIZED  eff=${fmtD(row[effectiveCol])}  FG#=${fgIdCol!=null?row[fgIdCol]:'n/a'}`,'info');
+    log(`    col AA (storeFRU)   = "${storeFruNorm||'NULL'}"`);
+    log(`    col AB (seller)     = "${selNorm||'NULL'}"  raw="${seller||'NULL'}"`);
+
+    if(!selNorm||!storeFruNorm){ log('    → SKIP: null value','warn'); return; }
+    if(selNorm===storeFruNorm){ log('    → SKIP: AA = AB (same entity, no transfer)','ok'); return; }
+    if(q2==null){ log('    → SKIP: bad effective date','warn'); return; }
+
+    log(`    → AA ≠ AB  — this row is an F2F candidate`,'err');
+
+    let innerMin=null;
+    rows.forEach(r=>{
+      if(String(r[statusCol]||'').trim().toLowerCase()==='finalized') return;
+      const rQ=dateKey(r[effectiveCol]); if(rQ==null||rQ<q2) return;
+      const rSel=getSeller(r); if(!rSel) return;
+      if(rSel.trim().toLowerCase()!==storeFruNorm) return;
+      if(innerMin===null||rQ<innerMin) innerMin=rQ;
+    });
+
+    const resultKey=Math.max(innerMin!==null?innerMin:q2, q2);
+    log(`    innerMin=${innerMin?fmtD(innerMin):'none'}   resultKey=${fmtD(resultKey)}`);
+
+    if(resultKey>latestF2FKey){
+      latestF2FKey=resultKey;
+      latestF2F=fmtD(resultKey===q2?row[effectiveCol]:resultKey);
+      if(latestF2F==='-') latestF2F=null;
+      log(`    ★ latestF2F updated to "${latestF2F}"`, 'warn');
+    }
+  });
+
+  sep();
+  if(latestF2F){
+    log(`RESULT: Latest F2F Date = ${latestF2F}  ← FALSE POSITIVE`,'err');
+    log('Look at the rows above: the seller and storeFRU strings differ for a row that should match.','err');
+  } else {
+    log(`RESULT: No F2F Date (dash)  ✓  correctly returns dash`,'ok');
+  }
+}
+</script>
+</body>
+</html>
