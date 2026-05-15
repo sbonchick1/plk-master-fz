@@ -138,6 +138,7 @@ function fssGrade(v) {
 // Columns: [0]=REST_NO [1]=FZ_CODE [2]=FZ_NAME [3]=TIME_PERIOD
 //          [4]=B3R_COUNT [5]=TOTAL_TICKETS [6]=ACR_VALUE [7]=DRIVER_WAIT_TIME
 //          [8]=EVENT_CAR_COUNT [9]=OVER_ALL_STAR_RATING [10]=REV_OVERALL_SCORE [11]=REV_T1_OVERALL_SCORE
+// Note: store.rev uses REV_T1_OVERALL_SCORE [11] — this is the "Current Round REV" displayed in the tool
 //
 // Keyed by TIME_PERIOD (not positional) so a store missing the RTD period
 // gets null for RTD — not the previous round's score bleeding into that slot.
@@ -172,8 +173,8 @@ function pivotOps(rows, rounds) {
       store.acr            = n(rtdRow[6]);
       store.wait_time      = n(rtdRow[7]);
       store.car_count      = n(rtdRow[8]);
-      store.rev            = n(rtdRow[10]);
-      store.rev_t1         = n(rtdRow[11]);
+      store.rev            = n(rtdRow[11]); // REV_T1_OVERALL_SCORE
+      store.rev_t1         = n(rtdRow[10]); // REV_OVERALL_SCORE
     }
 
     // Previous round (R3 slot) — only if store has a row for that period
