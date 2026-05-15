@@ -138,51 +138,56 @@ function fssGrade(v) {
 // Columns: [0]=REST_NO [1]=FZ_CODE [2]=FZ_NAME [3]=TIME_PERIOD
 //          [4]=B3R_COUNT [5]=TOTAL_TICKETS [6]=ACR_VALUE [7]=DRIVER_WAIT_TIME
 //          [8]=EVENT_CAR_COUNT [9]=OVER_ALL_STAR_RATING [10]=REV_OVERALL_SCORE [11]=REV_T1_OVERALL_SCORE
-// Positional mapping (sorted desc): [0]=rtd [1]=r3_prev [2]=r2_prev
-function pivotOps(rows) {
-  // Group by REST_NO
+//
+// Keyed by TIME_PERIOD (not positional) so a store missing the RTD period
+// gets null for RTD — not the previous round's score bleeding into that slot.
+// rounds = [rtdLabel, r3Label, r2Label] e.g. ["2026 R1","2025 R3","2025 R2"]
+function pivotOps(rows, rounds) {
+  const [rtdLabel, r3Label, r2Label] = rounds;
+
+  // Group rows by REST_NO, then by TIME_PERIOD
   const byStore = {};
   rows.forEach(row => {
     const plk = parseInt(row[0]);
     if (isNaN(plk) || plk <= 0) return;
-    if (!byStore[plk]) byStore[plk] = [];
-    byStore[plk].push(row);
+    if (!byStore[plk]) byStore[plk] = {};
+    byStore[plk][row[3]] = row; // key by TIME_PERIOD — e.g. "2026 R1"
   });
 
   const stores = [];
-  Object.entries(byStore).forEach(([plkStr, storeRows]) => {
+  const n = v => { const f = parseFloat(v); return isNaN(f) ? null : f; };
+
+  Object.entries(byStore).forEach(([plkStr, byPeriod]) => {
     const plk = parseInt(plkStr);
-    // Sort by TIME_PERIOD descending — most recent first
-    storeRows.sort((a, b) => periodSort(a[3], b[3]));
-
     const store = { plk };
-    const n = v => { const f = parseFloat(v); return isNaN(f) ? null : f; };
 
-    // Most recent round → rtd fields + operational metrics
-    if (storeRows[0]) {
-      const r = storeRows[0];
-      store.fss_rtd_period = r[3];                    // e.g. "2026 R1"
-      store.fss_rtd        = n(r[9]);
+    // RTD round — only populate if this store actually has a row for that period
+    const rtdRow = byPeriod[rtdLabel];
+    if (rtdRow) {
+      store.fss_rtd_period = rtdRow[3];
+      store.fss_rtd        = n(rtdRow[9]);
       store.fss_grade      = fssGrade(store.fss_rtd);
-      store.b3             = n(r[4]);
-      store.total_tickets  = n(r[5]);
-      store.acr            = n(r[6]);
-      store.wait_time      = n(r[7]);
-      store.car_count      = n(r[8]);
-      store.rev            = n(r[10]);
-      store.rev_t1         = n(r[11]);
+      store.b3             = n(rtdRow[4]);
+      store.total_tickets  = n(rtdRow[5]);
+      store.acr            = n(rtdRow[6]);
+      store.wait_time      = n(rtdRow[7]);
+      store.car_count      = n(rtdRow[8]);
+      store.rev            = n(rtdRow[10]);
+      store.rev_t1         = n(rtdRow[11]);
     }
 
-    // Second most recent → fss_r3
-    if (storeRows[1]) {
-      store.fss_r3_period = storeRows[1][3];
-      store.fss_r3        = n(storeRows[1][9]);
+    // Previous round (R3 slot) — only if store has a row for that period
+    const r3Row = byPeriod[r3Label];
+    if (r3Row) {
+      store.fss_r3_period = r3Row[3];
+      store.fss_r3        = n(r3Row[9]);
     }
 
-    // Third most recent → fss_r2
-    if (storeRows[2]) {
-      store.fss_r2_period = storeRows[2][3];
-      store.fss_r2        = n(storeRows[2][9]);
+    // Two rounds back (R2 slot) — only if store has a row for that period
+    const r2Row = byPeriod[r2Label];
+    if (r2Row) {
+      store.fss_r2_period = r2Row[3];
+      store.fss_r2        = n(r2Row[9]);
     }
 
     stores.push(store);
@@ -202,12 +207,15 @@ module.exports = async (req, res) => {
 
   try {
     const rows = await runQuery(OPERATIONS_SQL);
-    const stores = pivotOps(rows);
 
-    // Extract the 3 unique round labels from raw rows, sorted desc: [rtd, r3, r2]
+    // Extract the 3 expected round labels first, sorted desc: [rtd, r3, r2]
+    // These drive the TIME_PERIOD lookup in pivotOps — a store missing the RTD
+    // period gets null for that slot rather than having a prior round bleed in.
     const uniquePeriods = [...new Set(rows.map(r => r[3]).filter(Boolean))];
     uniquePeriods.sort((a, b) => periodSort(a, b));
     const rounds = uniquePeriods.slice(0, 3); // [most recent, second, third]
+
+    const stores = pivotOps(rows, rounds);
 
     res.status(200).json({ stores, count: stores.length, rounds });
   } catch(e) {
