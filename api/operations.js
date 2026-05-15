@@ -162,8 +162,6 @@ function pivotOps(rows) {
     if (storeRows[0]) {
       const r = storeRows[0];
       store.fss_rtd_period = r[3];                    // e.g. "2026 R1"
-      store.fss_rtd        = n(r[9]);
-      store.fss_grade      = fssGrade(store.fss_rtd);
       store.b3             = n(r[4]);
       store.total_tickets  = n(r[5]);
       store.acr            = n(r[6]);
@@ -171,18 +169,32 @@ function pivotOps(rows) {
       store.car_count      = n(r[8]);
       store.rev            = n(r[10]);
       store.rev_t1         = n(r[11]);
+      // Only set FSS score if the store had actual tickets this round.
+      // Temp closed stores appear in Snowflake with 0 tickets and a
+      // spurious star rating — suppress those so the column shows "-".
+      const rtdTickets = n(r[5]);
+      if (rtdTickets != null && rtdTickets > 0) {
+        store.fss_rtd   = n(r[9]);
+        store.fss_grade = fssGrade(store.fss_rtd);
+      }
     }
 
-    // Second most recent → fss_r3
+    // Second most recent → fss_r3 (suppress if 0 tickets that round too)
     if (storeRows[1]) {
-      store.fss_r3_period = storeRows[1][3];
-      store.fss_r3        = n(storeRows[1][9]);
+      const r3Tickets = n(storeRows[1][5]);
+      if (r3Tickets != null && r3Tickets > 0) {
+        store.fss_r3_period = storeRows[1][3];
+        store.fss_r3        = n(storeRows[1][9]);
+      }
     }
 
-    // Third most recent → fss_r2
+    // Third most recent → fss_r2 (suppress if 0 tickets that round too)
     if (storeRows[2]) {
-      store.fss_r2_period = storeRows[2][3];
-      store.fss_r2        = n(storeRows[2][9]);
+      const r2Tickets = n(storeRows[2][5]);
+      if (r2Tickets != null && r2Tickets > 0) {
+        store.fss_r2_period = storeRows[2][3];
+        store.fss_r2        = n(storeRows[2][9]);
+      }
     }
 
     stores.push(store);
