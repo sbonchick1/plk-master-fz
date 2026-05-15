@@ -8,32 +8,35 @@ const SF_DATABASE  = process.env.SF_DATABASE   || 'BRAND_PLK';
 const SF_SCHEMA    = process.env.SF_SCHEMA     || 'TLOG';
 const SF_ROLE      = process.env.SF_ROLE       || 'ANALYST_PLK';
 
-// ── Dynamic: auto-resolves last 3 FSS rounds based on current date
+// ── Dynamic: resolves last 3 FSS rounds based on the *previous* month.
+// Using DATEADD(MONTH,-1,CURRENT_DATE) means the April master file (generated
+// in May) uses April's round (2026 R1), not May's (2026 R2).
 const OPERATIONS_SQL = `
 WITH last_3_rounds AS (
     SELECT
-        YEAR(CURRENT_DATE) || ' R' || CEIL(MONTH(CURRENT_DATE) / 4) AS current_round,
-        CASE CEIL(MONTH(CURRENT_DATE) / 4)
+        YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R' || CEIL(MONTH(DATEADD(MONTH, -1, CURRENT_DATE)) / 4) AS current_round,
+        CASE CEIL(MONTH(DATEADD(MONTH, -1, CURRENT_DATE)) / 4)
             WHEN 1 THEN
                 ARRAY_CONSTRUCT(
-                    YEAR(CURRENT_DATE) || ' R1',
-                    (YEAR(CURRENT_DATE) - 1) || ' R3',
-                    (YEAR(CURRENT_DATE) - 1) || ' R2'
+                    YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R1',
+                    (YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) - 1) || ' R3',
+                    (YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) - 1) || ' R2'
                 )
             WHEN 2 THEN
                 ARRAY_CONSTRUCT(
-                    YEAR(CURRENT_DATE) || ' R2',
-                    YEAR(CURRENT_DATE) || ' R1',
-                    (YEAR(CURRENT_DATE) - 1) || ' R3'
+                    YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R2',
+                    YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R1',
+                    (YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) - 1) || ' R3'
                 )
             WHEN 3 THEN
                 ARRAY_CONSTRUCT(
-                    YEAR(CURRENT_DATE) || ' R3',
-                    YEAR(CURRENT_DATE) || ' R2',
-                    YEAR(CURRENT_DATE) || ' R1'
+                    YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R3',
+                    YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R2',
+                    YEAR(DATEADD(MONTH, -1, CURRENT_DATE)) || ' R1'
                 )
         END AS rounds
 )
+
 SELECT
     f.REST_NO,
     f.FZ_CODE,
