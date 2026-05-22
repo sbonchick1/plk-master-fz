@@ -276,7 +276,7 @@ tr:nth-child(even):hover td{background:#f0f3fa}
 
 const EBITDA_MONTHS = ["Mar-25","Apr-25","May-25","Jun-25","Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26"];
 const SALES_MONTHS  = ["Apr-25","May-25","Jun-25","Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26","Mar-26"]; // trailing 12 months
-const SOURCES_MONTHLY = [{"id":"fx","name":"FX Rates","desc":"20XX_FX_Rates_Distribution_*.xlsx","fmt":"xlsx","req":true,"pre":"2026_FX_Rates_Distribution_03_31_2026.xlsx"},{"id":"alignment","name":"Alignment File","desc":"PLK_Restaurants_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"PLK_Restaurants_03_30_2026.xlsx"},{"id":"dev_align","name":"Dev Alignment","desc":"PLK_NA_MDS_Alignment.xlsx — Image 3 (new vs. old image type)","fmt":"xlsx","req":false,"pre":"PLK NA_MDS Alignment.xlsx"},{"id":"mds","name":"MDS Overview","desc":"MDS_Overview_MMDDYYYY.xlsx","fmt":"xlsx","req":true,"pre":"MDS_Overview_02042026.xlsx"},{"id":"agree","name":"Agreement View","desc":"Agreement_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Agreement_View_02042026.csv"},{"id":"fg","name":"Franchise Group View","desc":"Franchise_Group_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Franchise_Group_View_02042026.csv"},{"id":"urb","name":"Urbanicity","type":"dual","req":true},{"id":"onestream","name":"One Stream Backend","desc":"Master_FZ_File_One_Stream_Backend_*.xlsx","fmt":"xlsx","req":true,"pre":"One_Stream_Backend_Feb_2026.xlsx"},{"id":"pl","name":"P&L / EBITDA","desc":"Full_P_L_Crosstab_*.csv","fmt":"csv","req":true,"pre":"Full_P_L_Crosstab_4_17_26.csv"}];
+const SOURCES_MONTHLY = [{"id":"fx","name":"FX Rates","desc":"20XX_FX_Rates_Distribution_*.xlsx","fmt":"xlsx","req":true,"pre":"2026_FX_Rates_Distribution_03_31_2026.xlsx"},{"id":"alignment","name":"Alignment File","desc":"PLK_Restaurants_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"PLK_Restaurants_03_30_2026.xlsx"},{"id":"dev_align","name":"Dev Alignment","desc":"PLK_NA_MDS_Alignment.xlsx — Image 3 (new vs. old image type)","fmt":"xlsx","req":false,"pre":"PLK NA_MDS Alignment.xlsx"},{"id":"mds","name":"MDS Overview","desc":"MDS_Overview_MMDDYYYY.xlsx","fmt":"xlsx","req":true,"pre":"MDS_Overview_02042026.xlsx"},{"id":"agree","name":"Agreement View","desc":"Agreement_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Agreement_View_02042026.csv"},{"id":"fg","name":"Franchise Group View","desc":"Franchise_Group_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Franchise_Group_View_02042026.csv"},{"id":"urb","name":"Urbanicity","type":"dual","req":true},{"id":"onestream","name":"One Stream Backend","desc":"Master_FZ_File_One_Stream_Backend_*.xlsx","fmt":"xlsx","req":true,"pre":"One_Stream_Backend_Feb_2026.xlsx","note":"Company EBITDA data sourced from the 'Total Company EBITDA' tab in this file. Franchisee EBITDA comes from the P&L / EBITDA input."},{"id":"pl","name":"P&L / EBITDA","desc":"Full_P_L_Crosstab_*.csv","fmt":"csv","req":true,"pre":"Full_P_L_Crosstab_4_17_26.csv"}];
 const SOURCES_QUARTERLY = [{"id":"deal_type","name":"Deal Type","desc":"Deal_Type_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Deal_Type_MM_DD_YYYY.xlsx","note":"Check with Asset Management Team before updating — may change quarterly. New stores not in file default to DTL."},{"id":"mp","name":"Sub-Cluster","desc":"Market_Planning_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Market_Planning_3_13_2026.xlsx","note":"Provides Market Planning Sub-Cluster only. DMA and DMA ID are sourced from the Alignment file."}];
 const SOURCES_ANNUAL  = [{"id":"py_sales","name":"PY Sales (annual)","desc":"PY_Sales_-_To_Be_Updated_Annually.xlsx \u2014 update in 2027","fmt":"xlsx","req":true,"pre":"PY_Sales_-_To_Be_Updated_Annually.xlsx"}];
 
@@ -2097,7 +2097,6 @@ function renderSnap(){
 // ║    tickets_mo     ← "SSS&SST" sheet col J    (PLK# in col D)          ║
 // ║    tickets (YTD)  ← "SSS&SST" sheet col Y    (PLK# in col A)          ║
 // ║    ebitda_monthly[]← "Total Company EBITDA" sheet (company-owned stores) ║
-// ║                      Fallback: "Company EBITDA" or "Carrols EBITDA"     ║
 // ║                      Franchisee EBITDA comes from P&L Crosstab input    ║
 // ║                                                                          ║
 // ║  PY SALES (PY_Sales_*.xlsx)                                             ║
@@ -3113,16 +3112,19 @@ async function parseOneStream(file){
 
         // ── 3. Total Company EBITDA → ebitda_monthly (company-owned stores only)
         // Franchisee EBITDA comes from the P&L Crosstab input, not OneStream.
-        for(const sn of['Total Company EBITDA','Company EBITDA','Carrols EBITDA']){
-          if(!wb.SheetNames.includes(sn)) continue;
-          const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
+        // No fallbacks — only "Total Company EBITDA" is valid.
+        if(!wb.SheetNames.includes('Total Company EBITDA')){
+          log('  ⚠ Sheet "Total Company EBITDA" not found — company EBITDA will not update');
+        } else {
+          const aoa=XLSX.utils.sheet_to_json(wb.Sheets['Total Company EBITDA'],{header:1,defval:null});
           const tr=findTimeRow(aoa), dr=findDataStart(aoa);
           if(tr&&dr>=0){
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row||row[0]==null) continue;
               const plk=parseInt(row[0]); if(isNaN(plk)||!srMap[plk]) continue;
               const s=srMap[plk];
-              if(!s.ebitda_monthly) s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
+              // Always reset to fresh null array — prevents prior month's values bleeding through
+              s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
               tr.labels.forEach((lbl,i)=>{
                 const idx=EBITDA_MONTHS.indexOf(lbl);
                 if(idx>=0) s.ebitda_monthly[idx]=parseNum(row[tr.startCol+i]);
@@ -3130,8 +3132,7 @@ async function parseOneStream(file){
               nEbitda++;
             }
           }
-          log('  '+sn+': '+nEbitda+' stores updated (EBITDA)');
-          nEbitda=0;
+          log('  Total Company EBITDA: '+nEbitda+' stores updated (EBITDA)');
         }
 
         log('✓ OneStream parsing complete.');
