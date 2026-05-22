@@ -2299,15 +2299,18 @@ function findDataStart(aoa){
   return -1;
 }
 function findTimeRow(aoa){
-  // Row 10 (index 9), columns I:AF (indices 8–31) — fixed range in this backend
+  // Row 10 (index 9) — scan dynamically for first time code so sheets with
+  // different column layouts (e.g. Total Company EBITDA vs OneStream) all work.
   const row=aoa[9]; if(!row) return null;
-  const COL_START=8, COL_END=31; // col I (index 8) → col AF (index 31)
+  let startCol=-1;
   const labels=[];
-  for(let c=COL_START;c<=COL_END;c++){
-    labels.push(row[c]?timeCodeToLabel(String(row[c])):null);
+  for(let c=0;c<Math.min(row.length,60);c++){
+    const lbl=row[c]!=null?timeCodeToLabel(String(row[c])):null;
+    if(lbl&&startCol<0) startCol=c; // first time code column
+    if(startCol>=0) labels.push(lbl);
   }
-  if(labels.filter(Boolean).length===0) return null;
-  return {startCol:COL_START, labels};
+  if(startCol<0||labels.filter(Boolean).length===0) return null;
+  return {startCol, labels};
 }
 
 // ─── Alignment file ────────────────────────────────
