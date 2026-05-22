@@ -2096,8 +2096,9 @@ function renderSnap(){
 // ║    sst_mo/sst     ← "SSS&SST" sheet col H/I  (PLK# in col D)          ║
 // ║    tickets_mo     ← "SSS&SST" sheet col J    (PLK# in col D)          ║
 // ║    tickets (YTD)  ← "SSS&SST" sheet col Y    (PLK# in col A)          ║
-// ║    ebitda_monthly[]← "Company EBITDA" or "Carrols EBITDA" sheet        ║
-// ║                      Priority: Carrols > Company EBITDA                 ║
+// ║    ebitda_monthly[]← "Total Company EBITDA" sheet (company-owned stores) ║
+// ║                      Fallback: "Company EBITDA" or "Carrols EBITDA"     ║
+// ║                      Franchisee EBITDA comes from P&L Crosstab input    ║
 // ║                                                                          ║
 // ║  PY SALES (PY_Sales_*.xlsx)                                             ║
 // ║    fy2021–fy2025  ← cols J–N  (matched on PLK# col A)                  ║
@@ -3110,8 +3111,9 @@ async function parseOneStream(file){
           log('  SSS&SST sheet: '+nSST+' stores updated (SSS/SST/tickets)');
         }
 
-        // ── 3. Company EBITDA + Carrols EBITDA → ebitda_monthly
-        for(const sn of['Company EBITDA','Carrols EBITDA']){
+        // ── 3. Total Company EBITDA → ebitda_monthly (company-owned stores only)
+        // Franchisee EBITDA comes from the P&L Crosstab input, not OneStream.
+        for(const sn of['Total Company EBITDA','Company EBITDA','Carrols EBITDA']){
           if(!wb.SheetNames.includes(sn)) continue;
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets[sn],{header:1,defval:null});
           const tr=findTimeRow(aoa), dr=findDataStart(aoa);
