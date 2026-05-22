@@ -3118,7 +3118,10 @@ async function parseOneStream(file){
         } else {
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['Total Company EBITDA'],{header:1,defval:null});
           const tr=findTimeRow(aoa), dr=findDataStart(aoa);
+          log('  Total Company EBITDA: time row '+(tr?'found (startCol='+tr.startCol+', labels=['+tr.labels.filter(Boolean).slice(0,6).join(',')+('...')+'])':'NOT FOUND')+' | data start row '+(dr>=0?dr:'NOT FOUND'));
+          log('  Total Company EBITDA: EBITDA_MONTHS=['+EBITDA_MONTHS.join(',')+']');
           if(tr&&dr>=0){
+            let nMatched=0;
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row||row[0]==null) continue;
               const plk=parseInt(row[0]); if(isNaN(plk)||!srMap[plk]) continue;
@@ -3127,10 +3130,11 @@ async function parseOneStream(file){
               s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
               tr.labels.forEach((lbl,i)=>{
                 const idx=EBITDA_MONTHS.indexOf(lbl);
-                if(idx>=0) s.ebitda_monthly[idx]=parseNum(row[tr.startCol+i]);
+                if(idx>=0){ s.ebitda_monthly[idx]=parseNum(row[tr.startCol+i]); nMatched++; }
               });
               nEbitda++;
             }
+            log('  Total Company EBITDA: '+nMatched+' month slots matched across '+nEbitda+' stores');
           }
           log('  Total Company EBITDA: '+nEbitda+' stores updated (EBITDA)');
         }
