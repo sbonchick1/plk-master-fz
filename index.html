@@ -2298,18 +2298,27 @@ function findDataStart(aoa){
   }
   return -1;
 }
-function findTimeRow(aoa, minCol){
-  // Row 10 (index 9) — scan dynamically for first time code.
-  // minCol (default 0): don't treat anything before this column as a time code.
-  //   OneStream sheet: pass minCol=8 (col I) — time codes always start there.
-  //   Total Company EBITDA: pass minCol=0 — time codes can start before col I.
+// findTimeRow: used by OneStream sales sheet — ALWAYS starts at col I (index 8), hardcoded.
+// This is the original proven-working logic. Do NOT change the start column.
+function findTimeRow(aoa){
+  const COL_START=8, COL_END=31; // col I (index 8) → col AF (index 31)
   const row=aoa[9]; if(!row) return null;
-  const start = (minCol!=null&&minCol>0) ? minCol : 0;
+  const labels=[];
+  for(let c=COL_START;c<=COL_END;c++){
+    labels.push(row[c]!=null?timeCodeToLabel(String(row[c])):null);
+  }
+  if(labels.filter(Boolean).length===0) return null;
+  return {startCol:COL_START, labels};
+}
+// findTimeRowDynamic: used by Total Company EBITDA sheet — scans from col 0 because
+// that sheet's time codes can start before col I.
+function findTimeRowDynamic(aoa){
+  const row=aoa[9]; if(!row) return null;
   let startCol=-1;
   const labels=[];
-  for(let c=start;c<Math.min(row.length,60);c++){
+  for(let c=0;c<Math.min(row.length,60);c++){
     const lbl=row[c]!=null?timeCodeToLabel(String(row[c])):null;
-    if(lbl&&startCol<0) startCol=c; // first time code column
+    if(lbl&&startCol<0) startCol=c;
     if(startCol>=0) labels.push(lbl);
   }
   if(startCol<0||labels.filter(Boolean).length===0) return null;
@@ -3054,7 +3063,7 @@ async function parseOneStream(file){
         if(!wb.SheetNames.includes('OneStream')) log('  ⚠ Sheet "OneStream" not found — sales will not update');
         if(wb.SheetNames.includes('OneStream')){
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['OneStream'],{header:1,defval:null});
-          const tr=findTimeRow(aoa,8), dr=findDataStart(aoa); // minCol=8: time codes always start at col I
+          const tr=findTimeRow(aoa), dr=findDataStart(aoa); // original hardcoded col I logic
           // ── Deep diagnostics: always log row 10 raw and SALES_MONTHS so mismatch is visible ──
           const _r10=aoa[9]||[];
           log('  OneStream row10 raw (cols A-T): '+JSON.stringify(_r10.slice(0,20)));
@@ -3128,7 +3137,7 @@ async function parseOneStream(file){
           log('  ⚠ Sheet "Total Company EBITDA" not found — company EBITDA will not update');
         } else {
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['Total Company EBITDA'],{header:1,defval:null});
-          const tr=findTimeRow(aoa,0), dr=findDataStart(aoa); // minCol=0: time codes may start before col I
+          const tr=findTimeRowDynamic(aoa), dr=findDataStart(aoa); // dynamic scan: time codes may start before col I
           log('  Total Company EBITDA: time row '+(tr?'found (startCol='+tr.startCol+', labels=['+tr.labels.filter(Boolean).slice(0,6).join(',')+('...')+'])':'NOT FOUND')+' | data start row '+(dr>=0?dr:'NOT FOUND'));
           log('  Total Company EBITDA: EBITDA_MONTHS=['+EBITDA_MONTHS.join(',')+']');
           if(tr&&dr>=0){
