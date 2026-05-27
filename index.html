@@ -3055,12 +3055,17 @@ async function parseOneStream(file){
         if(wb.SheetNames.includes('OneStream')){
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['OneStream'],{header:1,defval:null});
           const tr=findTimeRow(aoa,8), dr=findDataStart(aoa); // minCol=8: time codes always start at col I
-          log('  OneStream sheet: time row '+(tr?'found (startCol='+tr.startCol+', labels=['+tr.labels.filter(Boolean).slice(0,6).join(',')+('...')+'])':'NOT FOUND')+' | data start row '+(dr>=0?dr:'NOT FOUND'));
+          // ── Deep diagnostics: always log row 10 raw and SALES_MONTHS so mismatch is visible ──
+          const _r10=aoa[9]||[];
+          log('  OneStream row10 raw (cols A-T): '+JSON.stringify(_r10.slice(0,20)));
+          log('  SALES_MONTHS at parse time: ['+SALES_MONTHS.join(',')+']');
+          log('  findTimeRow result: '+(tr?'startCol='+tr.startCol+' labels=['+tr.labels.filter(Boolean).join(',')+']':'NULL — no time codes found in row 10 cols I+'));
+          log('  findDataStart result: '+(dr>=0?'row '+(dr+1):' NOT FOUND'));
           // Diagnostic: show first data row so we can verify PLK column and values
           if(dr>=0){
             const _dbgRow=aoa[dr]||[];
             log('  First data row (cols A-F): '+JSON.stringify(_dbgRow.slice(0,6)));
-            if(tr) log('  First data row monthly cols (startCol='+tr.startCol+'): '+JSON.stringify(_dbgRow.slice(tr.startCol,tr.startCol+4)));
+            if(tr) log('  First data row monthly cols (startCol='+tr.startCol+'): '+JSON.stringify(_dbgRow.slice(tr.startCol,tr.startCol+6)));
           }
           if(tr&&dr>=0){
             for(let r=dr;r<aoa.length;r++){
