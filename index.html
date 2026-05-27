@@ -3448,18 +3448,21 @@ function buildFR(){
     // L: Annualized EBITDA — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AY:$AY)
     const ebS=ss.filter(s=>s.ann_ebitda!=null);
     const avgEb=ebS.length?ebS.reduce((a,s)=>a+s.ann_ebitda,0)/ebS.length:null;
-    // M: Annualized EBITDA % — SUMIF(FRU, MSF col DI = TTM EBITDA) / SUMIF(FRU, MSF col DH = TTM Net Sales)
-    // Franchisees: use net_sales_monthly (P&L). Company stores: use monthly_sales (OneStream).
+    // M: Annualized EBITDA % — SUMIF(FRU, ttm_ebitda) / SUMIF(FRU, ttm_net_sales)
+    // Mirrors backend formula: col DI (TTM EBITDA) / col DH (TTM Net Sales).
+    // Franchisees: denominator = full sum(net_sales_monthly) — matches SUMIF(col DH).
+    // Company stores (no P&L): denominator = sum of matching OneStream monthly sales.
     let sumE=0,sumNS=0,hasEP=false;
     ss.forEach(s=>{
-      if(s.ttm_ebitda==null||!s.ebitda_monthly) return;
+      if(s.ttm_ebitda==null) return;
       if(s.net_sales_monthly){
-        // Franchisee: P&L net sales
-        let ns=0; s.ebitda_monthly.forEach((ev,i)=>{if(ev!=null&&s.net_sales_monthly[i]!=null)ns+=s.net_sales_monthly[i];});
-        if(ns>0){sumE+=s.ttm_ebitda;sumNS+=ns;hasEP=true;}
-      } else if(s.fru==='Company'&&s.monthly_sales){
-        // Company: use ms_prev for EBITDA_MONTHS[0], monthly_sales for the rest
-        let ns=0,e=0; s.ebitda_monthly.forEach((ev,i)=>{
+        // Franchisee: use full TTM net sales sum — matches SUMIF(col DH) exactly
+        const ttmNS=s.net_sales_monthly.reduce((a,v)=>a+(v!=null?v:0),0);
+        if(ttmNS>0){sumE+=s.ttm_ebitda;sumNS+=ttmNS;hasEP=true;}
+      } else if(s.fru==='Company'&&s.monthly_sales&&s.ebitda_monthly){
+        // Company: no P&L — use matching OneStream sales months as denominator
+        let ns=0,e=0;
+        s.ebitda_monthly.forEach((ev,i)=>{
           if(ev==null) return;
           if(i===0){if(s.ms_prev!=null){e+=ev;ns+=s.ms_prev;}}
           else{const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}}
@@ -3468,11 +3471,16 @@ function buildFR(){
       }
     });
     const avgEbPct=hasEP&&sumNS>0?sumE/sumNS:null;
-    // N: YTD SSS — OneStream: SUMIF(FRU, CY sales) / SUMIF(FRU, PY sales) − 1
-    //    Approx: avg(s.sss) per store (exact needs raw OS CY/PY sales per store)
-    const avgSSS=avg(ss.map(s=>s.sss));
-    // O: YTD SST — OneStream: same pattern as SSS but for traffic
-    const avgSST=avg(ss.map(s=>s.sst));
+    // N: YTD SSS — backend: SUMIF(CY comparable sales) / SUMIF(PY comparable sales) − 1 (weighted by volume).
+    // We only store the pre-computed per-store ratio (s.sss), not the raw CY/PY components from OneStream.
+    // Result: sales-weighted avg approximated by weighting each store's sss by its TTM ARS.
+    let sssNum=0,sssDen=0;
+    ss.forEach(s=>{ if(s.sss!=null&&s.ttm_ars!=null&&s.ttm_ars>0){sssNum+=s.sss*s.ttm_ars;sssDen+=s.ttm_ars;} });
+    const avgSSS=sssDen>0?sssNum/sssDen:(ss.some(s=>s.sss!=null)?avg(ss.map(s=>s.sss)):null);
+    // O: YTD SST — same weighted pattern as SSS, using tickets_mo as volume proxy
+    let sstNum=0,sstDen=0;
+    ss.forEach(s=>{ if(s.sst!=null&&s.tickets_mo!=null&&s.tickets_mo>0){sstNum+=s.sst*s.tickets_mo;sstDen+=s.tickets_mo;} });
+    const avgSST=sstDen>0?sstNum/sstDen:(ss.some(s=>s.sst!=null)?avg(ss.map(s=>s.sst)):null);
     // P: YTD Avg. Traffic — SUMIF(FRU, MSF col BF) / F6 (ALL store count, not just stores with data)
     const tixSum=ss.reduce((a,s)=>a+(s.tickets_mo!=null?s.tickets_mo:0),0);
     const avgTix=n>0?tixSum/n:null;
