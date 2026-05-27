@@ -777,7 +777,8 @@ function updateConfig(){
   // EBITDA: lags 1 month — trailing 12 ending at mo-1
   const eeMo=mo===1?12:mo-1, eeYr=mo===1?yr-1:yr;   // end = one month before file month
   const esMo=eeMo%12+1, esYr=eeMo===12?eeYr:eeYr-1; // start = 12 months before that
-  const salesLbl =`Sales: ${MN[ssMo]}-${yy(ssYr)}→${MN[mo]}-${yy(yr)}`;
+  // Sales start = EBITDA start (ms_prev adds one extra month to the left of SALES_MONTHS)
+  const salesLbl =`Sales: ${MN[esMo]}-${yy(esYr)}→${MN[mo]}-${yy(yr)}`;
   const ebitdaLbl=`EBITDA: ${MN[esMo]}-${yy(esYr)}→${MN[eeMo]}-${yy(eeYr)}`;
   const rentLbl  =`Rent: ${MN[eeMo]}-${yy(eeYr)}`;
   document.getElementById('cfg-lbl').textContent=salesLbl+' | '+ebitdaLbl+' | '+rentLbl;
@@ -3957,7 +3958,7 @@ async function generateFile(){
     // to data positions.  If they're stale (e.g. hardcoded for March but user selected
     // April) the new month's column is silently dropped and old-month slot stays null.
     _refreshMonthArrays();
-    log('  Month arrays updated: Sales='+SALES_MONTHS[0]+'→'+SALES_MONTHS[11]
+    log('  Month arrays updated: Sales='+EBITDA_MONTHS[0]+'(prev)→'+SALES_MONTHS[11]
         +' | EBITDA='+EBITDA_MONTHS[0]+'→'+EBITDA_MONTHS[11]);
 
     // Fixed parse order: alignment + fg must run before agree (agree needs s.fru + FG_MAP)
