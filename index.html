@@ -412,8 +412,8 @@ const COL_SRC = {
   ttm_ebitda:        'Calculated — sum of trailing 12 monthly EBITDA (OneStream)',
   ann_ebitda:        'Calculated — TTM EBITDA ÷ store months × 12',
   ann_ebitda_pct:    'Calculated — Annualized EBITDA ÷ Annualized ARS',
-  cur_rent:          'P&L Crosstab — Rent row, most recent month value',
-  cur_rent_pct:      'P&L Crosstab — Rent % row, most recent month value',
+  cur_rent:          'P&L Crosstab — Rent row, most recent non-null value within EBITDA window (capped at last EBITDA month)',
+  cur_rent_pct:      'P&L Crosstab — Rent % row, most recent non-null value within EBITDA window (capped at last EBITDA month)',
   store_months_ebitda:'Calculated — count of non-null EBITDA months',
   // Sales / Traffic Comps
   sss:               'OneStream — SSS&SST tab, col G (YTD Same Store Sales vs PY)',
@@ -2546,6 +2546,18 @@ async function parsePL(file){
   }
 
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
+
+  // Rent should come from the last EBITDA month (EBITDA_MONTHS[11] = file_month − 1),
+  // NOT from the very last column in the P&L which may be file_month itself.
+  // Find that column in the P&L; fall back to last available col if label absent.
+  const lastEbitdaLbl=EBITDA_MONTHS[EBITDA_MONTHS.length-1];
+  let rentMaxCol=-1;
+  for(let c=monthStart;c<hRow.length;c++){
+    if(monthLabels[c-monthStart]===lastEbitdaLbl){rentMaxCol=c;break;}
+  }
+  if(rentMaxCol<0) rentMaxCol=hRow.length-1; // fallback if P&L ends before last EBITDA month
+  log('  P&L: rent capped at col '+(rentMaxCol)+' = "'+monthLabels[rentMaxCol-monthStart]+'" (target: '+lastEbitdaLbl+')');
+
   let n=0, nRent=0, nEbitda=0;
   const seen=new Set();
   for(let r=hr+1;r<aoa.length;r++){
@@ -2554,16 +2566,17 @@ async function parsePL(file){
     const s=srMap[plk]; if(!s) continue;
     const cat=String(row[catCol]||'').trim();
     if(cat==='Rent'||cat==='Rent '){
-      // Most recent non-null TTM month = current rent (latest of TTM window = last col)
+      // Scan backwards from the last EBITDA month column (not the end of the P&L)
+      // so rent aligns with the EBITDA window (e.g. Mar-26, not Apr-26 for April file)
       let latest=null;
-      for(let c=row.length-1;c>=monthStart;c--){const v=parseNum(row[c]);if(v!=null){latest=v;break;}}
+      for(let c=rentMaxCol;c>=monthStart;c--){const v=parseNum(row[c]);if(v!=null){latest=v;break;}}
       s.cur_rent=latest;
       if(latest!=null) nRent++;
       if(!seen.has(plk)) n++;
       seen.add(plk);
     } else if(cat==='Rent %'||cat==='Rent%'){
       let latest=null;
-      for(let c=row.length-1;c>=monthStart;c--){const v=parsePct(row[c]);if(v!=null){latest=v;break;}}
+      for(let c=rentMaxCol;c>=monthStart;c--){const v=parsePct(row[c]);if(v!=null){latest=v;break;}}
       s.cur_rent_pct=latest;
     } else if(cat==='EBITDA'){
       if(!s.ebitda_monthly) s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
