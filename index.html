@@ -2575,10 +2575,10 @@ async function parsePL(file){
     const row=aoa[r]; if(!row||row[plkCol]==null) continue;
     const plk=parseInt(row[plkCol]); if(isNaN(plk)||plk<=0) continue;
     const s=srMap[plk]; if(!s) continue;
-    const cat=String(row[catCol]||'').trim();
+    const cat=String(row[catCol]||'').trim(); // always trimmed — "Rent " → "Rent"
     const catL=cat.toLowerCase();
-    // Rent $: any label containing 'rent' but NOT '%' (covers 'Rent', 'Rent ', 'Base Rent', 'Total Rent', etc.)
-    if(catL.includes('rent')&&!catL.includes('%')){
+    // Rent $: trimmed label is exactly 'rent' (covers "Rent", "Rent " in source file)
+    if(catL==='rent'){
       // Scan backwards from the last EBITDA month column (not the end of the P&L)
       // so rent aligns with the EBITDA window (e.g. Mar-26, not Apr-26 for April file)
       let latest=null;
@@ -2587,8 +2587,8 @@ async function parsePL(file){
       if(latest!=null) nRent++;
       if(!seen.has(plk)) n++;
       seen.add(plk);
-    } else if(catL.includes('rent')&&catL.includes('%')){
-      // Rent %: any label containing both 'rent' and '%'
+    } else if(catL==='rent %'||catL==='rent%'||catL==='rent pct'){
+      // Rent %: exact trim-match for known percent labels
       let latest=null;
       for(let c=rentMaxCol;c>=monthStart;c--){const v=parsePct(row[c]);if(v!=null){latest=v;break;}}
       s.cur_rent_pct=latest;
