@@ -3133,31 +3133,61 @@ async function parseOneStream(file){
         }
 
         // ── 2. SSS&SST sheet → sss, sst, sss_mo, sst_mo, tickets_mo, tickets
-        // Col D (index 3) = PLK# for SSS/SST/monthly-tickets match
-        // Col A (index 0) = PLK# for YTD tickets match
-        // col F(5)=Monthly SSS  col G(6)=YTD SSS
-        // col H(7)=Monthly SST  col I(8)=YTD SST
-        // col J(9)=Monthly Ticket Count (tickets_mo)
-        // col Y(24)=YTD Avg Tickets (tickets) — matched on col A
+        // Formula-confirmed column mapping (col letters = Excel, indices = 0-based):
+        //   Col A (0)  = PLK# for YTD Avg Tickets match (MATCH on $A:$A)
+        //   Col D (3)  = PLK# for all other fields    (MATCH on $D:$D / $D$26+)
+        //   Col F (5)  = Monthly SSS
+        //   Col G (6)  = YTD SSS
+        //   Col H (7)  = Monthly SST
+        //   Col I (8)  = YTD SST
+        //   Col J (9)  = Monthly Total Tickets
+        //   Col Y (24) = YTD Avg. Tickets
+        // Data starts at Excel row 26 (index 25) per formula $D$26:$D$33281
         if(wb.SheetNames.includes('SSS&SST')){
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['SSS&SST'],{header:1,defval:null});
-          const dr=findDataStart(aoa);
+          // Find data start by scanning col D (index 3) for first valid PLK#
+          // (not col A — col A may have non-PLK integers in header area)
+          let dr=-1;
+          for(let r=0;r<aoa.length;r++){
+            const row=aoa[r]; if(!row||row[3]==null) continue;
+            const n=parseInt(row[3]);
+            if(!isNaN(n)&&n>0&&n<100000){dr=r;break;}
+          }
+          log('  SSS&SST: data start row '+(dr>=0?dr+1:'NOT FOUND')+
+              ' | row10 colA='+JSON.stringify((aoa[9]||[])[0])+
+              ' colD='+JSON.stringify((aoa[9]||[])[3]));
           if(dr>=0){
+            // Helper: treat 0 as null (OneStream "Display no Data as Zero")
+            const fp=v=>{const n=parsePct(v);return (n===0||n===null)?null:n;};
+            const fn=v=>{const n=parseNum(v);return (n===0||n===null)?null:n;};
             for(let r=dr;r<aoa.length;r++){
-              const row=aoa[r]; if(!row||row[3]==null) continue;    // col D (index 3) for SSS/SST
-              const plk=parseInt(row[3]); if(isNaN(plk)||!srMap[plk]) continue;
-              const s=srMap[plk];
-              s.sss_mo   =parsePct(row[5]);  // col F: Monthly SSS
-              s.sss      =parsePct(row[6]);  // col G: YTD SSS
-              s.sst_mo   =parsePct(row[7]);  // col H: Monthly SST
-              s.sst      =parsePct(row[8]);  // col I: YTD SST
-              s.tickets_mo=parseNum(row[9]); // col J: Monthly Ticket Count
-              // YTD Avg Tickets: matched on col A (index 0), stored as 'tickets'
-              const tickPlk=parseInt(row[0]);
-              if(!isNaN(tickPlk)&&srMap[tickPlk]) srMap[tickPlk].tickets=parseNum(row[24]);
-              nSST++;
+              const row=aoa[r]; if(!row) continue;
+              // SSS / SST / monthly tickets — match on col D PLK#
+              if(row[3]!=null){
+                const plk=parseInt(row[3]);
+                if(!isNaN(plk)&&plk>0&&srMap[plk]){
+                  const s=srMap[plk];
+                  s.sss_mo    =fp(row[5]);   // col F: Monthly SSS
+                  s.sss       =fp(row[6]);   // col G: YTD SSS
+                  s.sst_mo    =fp(row[7]);   // col H: Monthly SST
+                  s.sst       =fp(row[8]);   // col I: YTD SST
+                  s.tickets_mo=fn(row[9]);   // col J: Monthly Total Tickets
+                  nSST++;
+                }
+              }
+              // YTD Avg Tickets — match on col A PLK# (separate MATCH column per formula)
+              if(row[0]!=null){
+                const plk=parseInt(row[0]);
+                if(!isNaN(plk)&&plk>0&&srMap[plk]){
+                  const v=fn(row[24]);       // col Y: YTD Avg. Tickets
+                  if(v!=null) srMap[plk].tickets=v;
+                }
+              }
             }
           }
+          // Diagnostic: show first matched store values
+          const _dbgS=SR.find(s=>s.sss!=null||s.sst!=null||s.tickets!=null);
+          if(_dbgS) log('  SSS&SST sample — PLK '+_dbgS.plk+': sss='+_dbgS.sss+' sst='+_dbgS.sst+' sss_mo='+_dbgS.sss_mo+' tickets='+_dbgS.tickets+' tickets_mo='+_dbgS.tickets_mo);
           log('  SSS&SST sheet: '+nSST+' stores updated (SSS/SST/tickets)');
         }
 
