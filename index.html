@@ -2579,19 +2579,17 @@ async function parsePL(file){
     const catL=cat.toLowerCase();
     // Rent $: trimmed label is exactly 'rent' (covers "Rent", "Rent " in source file)
     if(catL==='rent'){
-      // Scan backwards from the last EBITDA month column (not the end of the P&L)
-      // so rent aligns with the EBITDA window (e.g. Mar-26, not Apr-26 for April file)
-      let latest=null;
-      for(let c=rentMaxCol;c>=monthStart;c--){const v=parseNum(row[c]);if(v!=null){latest=v;break;}}
-      s.cur_rent=latest;
-      if(latest!=null) nRent++;
+      // Exact month only — rentMaxCol is the last EBITDA month (e.g. Mar-26 for April file).
+      // If that cell is null the store gets a dash; no backwards fallback to earlier months.
+      const v=parseNum(row[rentMaxCol]);
+      s.cur_rent=(v!=null&&v!==0)?v:null;
+      if(s.cur_rent!=null) nRent++;
       if(!seen.has(plk)) n++;
       seen.add(plk);
     } else if(catL==='rent %'||catL==='rent%'||catL==='rent pct'){
-      // Rent %: exact trim-match for known percent labels
-      let latest=null;
-      for(let c=rentMaxCol;c>=monthStart;c--){const v=parsePct(row[c]);if(v!=null){latest=v;break;}}
-      s.cur_rent_pct=latest;
+      // Rent %: exact same month as Rent $
+      const v=parsePct(row[rentMaxCol]);
+      s.cur_rent_pct=(v!=null&&v!==0)?v:null;
     } else if(cat==='EBITDA'){
       if(!s.ebitda_monthly) s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
       let matched=0;
