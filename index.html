@@ -2298,13 +2298,16 @@ function findDataStart(aoa){
   }
   return -1;
 }
-function findTimeRow(aoa){
-  // Row 10 (index 9) — scan dynamically for first time code so sheets with
-  // different column layouts (e.g. Total Company EBITDA vs OneStream) all work.
+function findTimeRow(aoa, minCol){
+  // Row 10 (index 9) — scan dynamically for first time code.
+  // minCol (default 0): don't treat anything before this column as a time code.
+  //   OneStream sheet: pass minCol=8 (col I) — time codes always start there.
+  //   Total Company EBITDA: pass minCol=0 — time codes can start before col I.
   const row=aoa[9]; if(!row) return null;
+  const start = (minCol!=null&&minCol>0) ? minCol : 0;
   let startCol=-1;
   const labels=[];
-  for(let c=0;c<Math.min(row.length,60);c++){
+  for(let c=start;c<Math.min(row.length,60);c++){
     const lbl=row[c]!=null?timeCodeToLabel(String(row[c])):null;
     if(lbl&&startCol<0) startCol=c; // first time code column
     if(startCol>=0) labels.push(lbl);
@@ -3051,7 +3054,7 @@ async function parseOneStream(file){
         if(!wb.SheetNames.includes('OneStream')) log('  ⚠ Sheet "OneStream" not found — sales will not update');
         if(wb.SheetNames.includes('OneStream')){
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['OneStream'],{header:1,defval:null});
-          const tr=findTimeRow(aoa), dr=findDataStart(aoa);
+          const tr=findTimeRow(aoa,8), dr=findDataStart(aoa); // minCol=8: time codes always start at col I
           log('  OneStream sheet: time row '+(tr?'found (startCol='+tr.startCol+', labels=['+tr.labels.filter(Boolean).slice(0,6).join(',')+('...')+'])':'NOT FOUND')+' | data start row '+(dr>=0?dr:'NOT FOUND'));
           // Diagnostic: show first data row so we can verify PLK column and values
           if(dr>=0){
@@ -3120,7 +3123,7 @@ async function parseOneStream(file){
           log('  ⚠ Sheet "Total Company EBITDA" not found — company EBITDA will not update');
         } else {
           const aoa=XLSX.utils.sheet_to_json(wb.Sheets['Total Company EBITDA'],{header:1,defval:null});
-          const tr=findTimeRow(aoa), dr=findDataStart(aoa);
+          const tr=findTimeRow(aoa,0), dr=findDataStart(aoa); // minCol=0: time codes may start before col I
           log('  Total Company EBITDA: time row '+(tr?'found (startCol='+tr.startCol+', labels=['+tr.labels.filter(Boolean).slice(0,6).join(',')+('...')+'])':'NOT FOUND')+' | data start row '+(dr>=0?dr:'NOT FOUND'));
           log('  Total Company EBITDA: EBITDA_MONTHS=['+EBITDA_MONTHS.join(',')+']');
           if(tr&&dr>=0){
