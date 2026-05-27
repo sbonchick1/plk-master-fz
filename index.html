@@ -4245,7 +4245,7 @@ function exportExcel(){
 // that re-fetch on every page load — no need to persist them here.
 const PERSIST_KEYS=[
   'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',   // P&L (uploaded)
-  'monthly_sales','ms_prev',                               // OneStream sales (uploaded)
+  'monthly_sales',                                          // OneStream sales (uploaded) — ms_prev intentionally NOT persisted (month-specific scalar)
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',             // OneStream SSS/SST/Traffic (uploaded)
 ];
 const LS_KEY='plk_sr_delta_v2';
