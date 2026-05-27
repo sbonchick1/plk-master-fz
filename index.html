@@ -2547,16 +2547,17 @@ async function parsePL(file){
 
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
 
-  // Rent should come from the last EBITDA month (EBITDA_MONTHS[11] = file_month − 1),
-  // NOT from the very last column in the P&L which may be file_month itself.
-  // Find that column in the P&L; fall back to last available col if label absent.
-  const lastEbitdaLbl=EBITDA_MONTHS[EBITDA_MONTHS.length-1];
+  // Rent cap: scan the P&L's own month labels (built from rows 1+2 of the file) and
+  // keep the rightmost column whose label falls within EBITDA_MONTHS.
+  // This is fully file-driven — works regardless of how many extra months the P&L
+  // contains beyond the EBITDA window (could be 1, could be more).
   let rentMaxCol=-1;
   for(let c=monthStart;c<hRow.length;c++){
-    if(monthLabels[c-monthStart]===lastEbitdaLbl){rentMaxCol=c;break;}
+    const lbl=monthLabels[c-monthStart];
+    if(lbl&&EBITDA_MONTHS.indexOf(lbl)>=0) rentMaxCol=c; // keep advancing to rightmost match
   }
-  if(rentMaxCol<0) rentMaxCol=hRow.length-1; // fallback if P&L ends before last EBITDA month
-  log('  P&L: rent capped at col '+(rentMaxCol)+' = "'+monthLabels[rentMaxCol-monthStart]+'" (target: '+lastEbitdaLbl+')');
+  if(rentMaxCol<0) rentMaxCol=hRow.length-1; // fallback: no EBITDA months found in headers
+  log('  P&L: rent capped at col '+rentMaxCol+' = "'+monthLabels[rentMaxCol-monthStart]+'" (last EBITDA month in file)');
 
   let n=0, nRent=0, nEbitda=0;
   const seen=new Set();
