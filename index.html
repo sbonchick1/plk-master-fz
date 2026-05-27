@@ -3101,7 +3101,7 @@ async function parseOneStream(file){
               // Use LAST occurrence of each month label — the correct TotalMarketSales_FZ
               // group comes after any subtotal/other account columns in the export
               s.monthly_sales=new Array(SALES_MONTHS.length).fill(null);
-              s.monthly_sales_prev=null; // extra month = EBITDA_MONTHS[0], col H
+              s.ms_prev=null; // extra month = EBITDA_MONTHS[0], col H
               tr.labels.forEach((lbl,i)=>{
                 if(!lbl) return;
                 const v=parseNum(row[tr.startCol+i]);
@@ -3109,7 +3109,7 @@ async function parseOneStream(file){
                 // for months with no submission; these should NOT count as store months
                 const parsed=(v===0)?null:v;
                 // EBITDA_MONTHS[0] is one month before SALES_MONTHS starts — store as prev
-                if(lbl===EBITDA_MONTHS[0]){ s.monthly_sales_prev=parsed; return; }
+                if(lbl===EBITDA_MONTHS[0]){ s.ms_prev=parsed; return; }
                 const idx=SALES_MONTHS.indexOf(lbl);
                 if(idx>=0) s.monthly_sales[idx]=parsed;
               });
@@ -3289,13 +3289,13 @@ function calculateFields(){
       // Franchisee: use P&L net sales
       if(hasNS&&ttmNS>0) s.ann_ebitda_pct=s.ttm_ebitda/ttmNS;
       // Company store: use OneStream monthly_sales as denominator (no P&L submitted)
-      // EBITDA_MONTHS[0] has no overlap in SALES_MONTHS — use monthly_sales_prev for it
+      // EBITDA_MONTHS[0] has no overlap in SALES_MONTHS — use ms_prev for it
       if(!hasNS&&isCompany&&s.monthly_sales){
         let coNS=0, coE=0, hasCo=false;
         for(let i=0;i<s.ebitda_monthly.length;i++){
           const ev=s.ebitda_monthly[i]; if(ev==null) continue;
           if(i===0){
-            if(s.monthly_sales_prev!=null){ coE+=ev; coNS+=s.monthly_sales_prev; hasCo=true; }
+            if(s.ms_prev!=null){ coE+=ev; coNS+=s.ms_prev; hasCo=true; }
           } else {
             const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);
             if(sidx>=0&&s.monthly_sales[sidx]!=null){ coE+=ev; coNS+=s.monthly_sales[sidx]; hasCo=true; }
@@ -3406,10 +3406,10 @@ function buildFR(){
         let ns=0; s.ebitda_monthly.forEach((ev,i)=>{if(ev!=null&&s.net_sales_monthly[i]!=null)ns+=s.net_sales_monthly[i];});
         if(ns>0){sumE+=s.ttm_ebitda;sumNS+=ns;hasEP=true;}
       } else if(s.fru==='Company'&&s.monthly_sales){
-        // Company: use monthly_sales_prev for EBITDA_MONTHS[0], monthly_sales for the rest
+        // Company: use ms_prev for EBITDA_MONTHS[0], monthly_sales for the rest
         let ns=0,e=0; s.ebitda_monthly.forEach((ev,i)=>{
           if(ev==null) return;
-          if(i===0){if(s.monthly_sales_prev!=null){e+=ev;ns+=s.monthly_sales_prev;}}
+          if(i===0){if(s.ms_prev!=null){e+=ev;ns+=s.ms_prev;}}
           else{const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}}
         });
         if(ns>0){sumE+=e;sumNS+=ns;hasEP=true;}
@@ -3501,10 +3501,10 @@ function buildDR(){
         let ns=0; s.ebitda_monthly.forEach((ev,i)=>{if(ev!=null&&s.net_sales_monthly[i]!=null)ns+=s.net_sales_monthly[i];});
         if(ns>0){sumE+=s.ttm_ebitda;sumNS+=ns;hasEP=true;}
       } else if(s.fru==='Company'&&s.monthly_sales){
-        // Company: use monthly_sales_prev for EBITDA_MONTHS[0], monthly_sales for the rest
+        // Company: use ms_prev for EBITDA_MONTHS[0], monthly_sales for the rest
         let ns=0,e=0; s.ebitda_monthly.forEach((ev,i)=>{
           if(ev==null) return;
-          if(i===0){if(s.monthly_sales_prev!=null){e+=ev;ns+=s.monthly_sales_prev;}}
+          if(i===0){if(s.ms_prev!=null){e+=ev;ns+=s.ms_prev;}}
           else{const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}}
         });
         if(ns>0){sumE+=e;sumNS+=ns;hasEP=true;}
@@ -4203,7 +4203,7 @@ function exportExcel(){
 // that re-fetch on every page load — no need to persist them here.
 const PERSIST_KEYS=[
   'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',   // P&L (uploaded)
-  'monthly_sales','monthly_sales_prev',                               // OneStream sales (uploaded)
+  'monthly_sales','ms_prev',                               // OneStream sales (uploaded)
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',             // OneStream SSS/SST/Traffic (uploaded)
 ];
 const LS_KEY='plk_sr_delta_v2';
