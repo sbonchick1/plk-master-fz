@@ -454,7 +454,7 @@ const COL_SRC = {
   reno_date:         'Smartsheet — Renovation Due Date (live connection)',
   reno_scope:        'Smartsheet — Initial Renovation Scope (live connection)',
   // Restaurant Attributes
-  reno_image:        'MDS Overview — Exterior Image Type',
+  reno_image:        'Dev Alignment (PLK NA_MDS Alignment.xlsx) — Image 3 column (col V), new vs. old image type',
   fg_num:            'MDS Overview — Franchise Group # (col 10)',
   rest_owned:        'Calculated — count of stores in SR sharing the same Franchise Reporting Unit',
   total_rest_dma:    'Calculated — count of all stores in SR in the same DMA',
@@ -1084,7 +1084,7 @@ function handleUpload(id, inp){
           const plk=parseInt(row[restCol]); if(isNaN(plk)||plk<=0) continue;
           if(devMap[plk]) continue;
           const val=row[imgCol]!=null?String(row[imgCol]).trim():null;
-          if(val) devMap[plk]={plk,image_type:val};
+          if(val) devMap[plk]={plk,image_type:val,reno_image:val};
         }
         const devSnap=Object.values(devMap).map(s=>{ const o={}; DEV_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
         if(devSnap.length===0){ log('[DevAlign scan] No rows parsed'); return; }
@@ -2132,7 +2132,7 @@ function renderSnap(){
 // ║  RENOVATIONS (from Smartsheet / Renovations_*.csv)                      ║
 // ║    reno_date     ← col B  (PLK# in col A)                              ║
 // ║    reno_scope    ← col C                                                ║
-// ║    reno_image    ← col F  (PLK# in col E for image match)              ║
+// ║    reno_image    ← Dev Alignment Image 3 col (same as image_type)      ║
 // ║                                                                          ║
 // ║  DEAL TYPE (Deal_Type_*.csv or Alignment col BK)                        ║
 // ║    deal_type     ← col B  (PLK# in col A)                              ║
@@ -2442,9 +2442,9 @@ async function parseDevAlign(file){
     const plk=parseInt(row[restCol]); if(isNaN(plk)||plk<=0) continue;
     const s=srMap[plk]; if(!s) continue;
     const val=row[imgCol]!=null?String(row[imgCol]).trim():null;
-    if(val) { s.image_type=val; n++; }
+    if(val) { s.image_type=val; s.reno_image=val; n++; }
   }
-  log('✓ Dev Alignment: '+n+' stores updated (Image 3 column — new vs. old image type)');
+  log('✓ Dev Alignment: '+n+' stores updated (Image 3 → image_type + reno_image)');
 }
 
 // ─── PY Sales (annual) ─────────────────────────────
@@ -4289,7 +4289,7 @@ const MDS_SNAP_KEYS=new Set([
 const URB_SNAP_KEYS  =new Set(['plk','urb']);
 const MP_SNAP_KEYS   =new Set(['plk','subcluster','mp_pop']);
 const DEAL_SNAP_KEYS =new Set(['plk','deal_type']);
-const DEV_SNAP_KEYS  =new Set(['plk','image_type']);
+const DEV_SNAP_KEYS  =new Set(['plk','image_type','reno_image']);
 const AGREE_SNAP_KEYS=new Set(['plk','f2f','fa_exp']);
 const PY_SNAP_KEYS   =new Set(['plk','fy2021','fy2022','fy2023','fy2024','fy2025']);
 
