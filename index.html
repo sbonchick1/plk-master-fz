@@ -3247,11 +3247,13 @@ function calculateFields(){
     if(s.ebitda_monthly)    s.ebitda_monthly   =s.ebitda_monthly.map(v=>v===0?null:v);
     if(s.net_sales_monthly) s.net_sales_monthly=s.net_sales_monthly.map(v=>v===0?null:v);
 
-    // TTM EBITDA from monthly EBITDA array (P&L)
-    // ann_ebitda_pct = TTM EBITDA / TTM FZ-submitted Net Sales (same months, from P&L)
-    // IMPORTANT: only overwrite ann_ebitda_pct when net_sales_monthly is present.
-    // If net_sales_monthly is missing (not uploaded this session), leave whatever value
-    // is already on the store — it came from localStorage or SR_DEFAULT and is still valid.
+    // TTM EBITDA from monthly EBITDA array (P&L for franchisees, OneStream for company)
+    // ann_ebitda_pct = TTM EBITDA / TTM Net Sales (same months)
+    //   Franchisees: net sales from net_sales_monthly (P&L Crosstab)
+    //   Company stores: net sales from monthly_sales (OneStream) — they don't submit P&Ls.
+    //     Match only months present in both EBITDA_MONTHS and SALES_MONTHS.
+    // IMPORTANT: only overwrite ann_ebitda_pct when we have net_sales to compute from;
+    // otherwise preserve stored value (came from localStorage/SR_DEFAULT).
     if(s.ebitda_monthly&&s.ebitda_monthly.length>0){
       let ttmE=0, smE=0, ttmNS=0, hasNS=false;
       for(let i=0;i<s.ebitda_monthly.length;i++){
@@ -3266,8 +3268,20 @@ function calculateFields(){
       s.store_months_ebitda=smE;
       s.ttm_ebitda =smE>0?ttmE:null;
       s.ann_ebitda =(s.ttm_ebitda!=null&&smE>0)?s.ttm_ebitda/smE*12:null;
-      // Only update pct when we have net_sales to compute from; otherwise preserve stored value
+      // Franchisee: use P&L net sales
       if(hasNS&&ttmNS>0) s.ann_ebitda_pct=s.ttm_ebitda/ttmNS;
+      // Company store: use OneStream monthly_sales as denominator (no P&L submitted)
+      if(!hasNS&&isCompany&&s.monthly_sales){
+        let coNS=0, coE=0, hasCo=false;
+        for(let i=0;i<s.ebitda_monthly.length;i++){
+          const ev=s.ebitda_monthly[i]; if(ev==null) continue;
+          const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);
+          if(sidx>=0&&s.monthly_sales[sidx]!=null){
+            coE+=ev; coNS+=s.monthly_sales[sidx]; hasCo=true;
+          }
+        }
+        if(hasCo&&coNS>0) s.ann_ebitda_pct=coE/coNS;
+      }
     }
 
     // TTM ARS from OneStream monthly sales array
@@ -3362,11 +3376,22 @@ function buildFR(){
     const ebS=ss.filter(s=>s.ann_ebitda!=null);
     const avgEb=ebS.length?ebS.reduce((a,s)=>a+s.ann_ebitda,0)/ebS.length:null;
     // M: Annualized EBITDA % — SUMIF(FRU, MSF col DI = TTM EBITDA) / SUMIF(FRU, MSF col DH = TTM Net Sales)
+    // Franchisees: use net_sales_monthly (P&L). Company stores: use monthly_sales (OneStream).
     let sumE=0,sumNS=0,hasEP=false;
     ss.forEach(s=>{
-      if(s.ttm_ebitda!=null&&s.net_sales_monthly&&s.ebitda_monthly){
+      if(s.ttm_ebitda==null||!s.ebitda_monthly) return;
+      if(s.net_sales_monthly){
+        // Franchisee: P&L net sales
         let ns=0; s.ebitda_monthly.forEach((ev,i)=>{if(ev!=null&&s.net_sales_monthly[i]!=null)ns+=s.net_sales_monthly[i];});
         if(ns>0){sumE+=s.ttm_ebitda;sumNS+=ns;hasEP=true;}
+      } else if(s.fru==='Company'&&s.monthly_sales){
+        // Company: OneStream monthly_sales — match overlapping months only
+        let ns=0,e=0; s.ebitda_monthly.forEach((ev,i)=>{
+          if(ev==null) return;
+          const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);
+          if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}
+        });
+        if(ns>0){sumE+=e;sumNS+=ns;hasEP=true;}
       }
     });
     const avgEbPct=hasEP&&sumNS>0?sumE/sumNS:null;
@@ -3446,11 +3471,22 @@ function buildDR(){
     const ebS=ss.filter(s=>s.ann_ebitda!=null);
     const avgEb=ebS.length?ebS.reduce((a,s)=>a+s.ann_ebitda,0)/ebS.length:null;
     // K: Annualized EBITDA % — SUMIF(DMA, MSF col DI = TTM EBITDA) / SUMIF(DMA, MSF col DH = TTM Net Sales)
+    // Franchisees: use net_sales_monthly (P&L). Company stores: use monthly_sales (OneStream).
     let sumE=0,sumNS=0,hasEP=false;
     ss.forEach(s=>{
-      if(s.ttm_ebitda!=null&&s.net_sales_monthly&&s.ebitda_monthly){
+      if(s.ttm_ebitda==null||!s.ebitda_monthly) return;
+      if(s.net_sales_monthly){
+        // Franchisee: P&L net sales
         let ns=0; s.ebitda_monthly.forEach((ev,i)=>{if(ev!=null&&s.net_sales_monthly[i]!=null)ns+=s.net_sales_monthly[i];});
         if(ns>0){sumE+=s.ttm_ebitda;sumNS+=ns;hasEP=true;}
+      } else if(s.fru==='Company'&&s.monthly_sales){
+        // Company: OneStream monthly_sales — match overlapping months only
+        let ns=0,e=0; s.ebitda_monthly.forEach((ev,i)=>{
+          if(ev==null) return;
+          const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);
+          if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}
+        });
+        if(ns>0){sumE+=e;sumNS+=ns;hasEP=true;}
       }
     });
     const avgEbPct=hasEP&&sumNS>0?sumE/sumNS:null;
