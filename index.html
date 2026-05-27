@@ -1696,7 +1696,9 @@ async function loadOperations(){
     bar.className='ss-bar ok';
     if(btn) btn.style.display='';
     log('&#10003; Operations (Snowflake): '+n+' stores updated · Rounds: '+rounds.join(', '));
-    filterMaster(); renderFZRows(); renderDMARows(); renderCARows();
+    // FSS scores, ACR, and REV feed FZ + DMA Summary — rebuild both before re-rendering
+    buildFR(); buildDR();
+    filterMaster(); renderFZ(); renderDMA(); renderCARows();
   }catch(e){
     st.textContent='Error: '+e.message;
     bar.className='ss-bar err';
@@ -4061,8 +4063,8 @@ async function generateFile(){
     // Re-render all tabs with updated data
     buildMasterHeader(); // rebuild column headers with current SALES_MONTHS / EBITDA_MONTHS
     mFilt=[...SR]; mP=0; filterMaster();
-    fzFilt=[...FR]; fzP=0; renderFZRows();
-    dmaFilt=[...DR]; dmaP=0; renderDMARows();
+    renderFZ();   // re-applies current div/search filters to fresh FR
+    renderDMA();  // re-applies current div/search filters to fresh DR
     caFilt=[...CR]; caP=0; renderCARows();
     buildFilters();   // refresh division/urbanicity filter dropdowns from updated SR
     buildSnapSel();   // refresh Snapshot Tool PLK# selector
