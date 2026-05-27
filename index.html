@@ -1756,11 +1756,20 @@ function fixStickyRow2(theadId){
     }
   });
 }
+// Returns the current (possibly post-_refreshMonthArrays) label for a column.
+// M_COLS h: values are string snapshots from page-load; ms_/eb_ keys must be
+// resolved against the live SALES_MONTHS / EBITDA_MONTHS arrays instead.
+function dynColHeader(col){
+  if(col.k==='ms_prev') return EBITDA_MONTHS[0];
+  const ms=col.k&&col.k.match(/^ms_(\d+)$/); if(ms) return SALES_MONTHS[+ms[1]]||col.h;
+  const eb=col.k&&col.k.match(/^eb_(\d+)$/); if(eb) return EBITDA_MONTHS[+eb[1]]||col.h;
+  return col.h;
+}
 function buildMasterHeader(){
   const thead=document.getElementById('m-thead');
   let r1='<tr>',r2='<tr>';
   SECTIONS.forEach(s=>{r1+='<th class="sec" colspan="'+s.span+'" style="background:#'+s.c+'">'+s.l+'</th>';});
-  M_COLS.forEach((col,ci)=>{r2+='<th id="mh-'+ci+'" style="background:#'+col.c+';min-width:'+col.w+'px">'+col.h+'</th>';});
+  M_COLS.forEach((col,ci)=>{r2+='<th id="mh-'+ci+'" style="background:#'+col.c+';min-width:'+col.w+'px">'+dynColHeader(col)+'</th>';});
   thead.innerHTML=r1+'</tr>'+r2+'</tr>';
   thead.querySelectorAll('tr:nth-child(2) th').forEach((th,ci)=>{
     th.addEventListener('click',()=>colStats('master',ci));
@@ -3994,6 +4003,7 @@ async function generateFile(){
     buildFR(); // rebuild FZ Summary — grouped by FRU from SR
     buildDR(); // rebuild DMA Summary — grouped by DMA from SR
     // Re-render all tabs with updated data
+    buildMasterHeader(); // rebuild column headers with current SALES_MONTHS / EBITDA_MONTHS
     mFilt=[...SR]; mP=0; filterMaster();
     fzFilt=[...FR]; fzP=0; renderFZRows();
     dmaFilt=[...DR]; dmaP=0; renderDMARows();
