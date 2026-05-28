@@ -555,7 +555,7 @@ const DMA_SRC={
         const ci=td.cellIndex;
         const col=(cols())[ci];
         if(!col) return;
-        show(e,srcFn(col)||'',col.h);
+        show(e,srcFn(col)||'',dynColHeader(col));
       });
       document.addEventListener('mousemove',e=>{
         if(TIP.style.display==='block') position(e);
@@ -4317,7 +4317,7 @@ function exportExcel(){
 // that re-fetch on every page load — no need to persist them here.
 const PERSIST_KEYS=[
   'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',   // P&L (uploaded)
-  'monthly_sales',                                          // OneStream sales (uploaded) — ms_prev intentionally NOT persisted (month-specific scalar)
+  'monthly_sales','ms_prev',                                // OneStream sales (uploaded)
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',             // OneStream SSS/SST/Traffic (uploaded)
 ];
 const LS_KEY='plk_sr_delta_v2';
@@ -4463,7 +4463,7 @@ async function saveState(){
       // For fields explicitly cleared by a parser in this Generate, save the null
       // so the delta can override stale SR_DEFAULT values on the next page reload.
       const saveNull=(
-        (k==='monthly_sales'&&window._oneStreamParsed) ||
+        (k==='monthly_sales'||k==='ms_prev')&&window._oneStreamParsed ||
         (k==='sss'||k==='sst'||k==='sss_mo'||k==='sst_mo'||k==='tickets_mo'||k==='tickets')&&window._oneStreamParsed
       );
       if(saveNull) d[k]=v;
