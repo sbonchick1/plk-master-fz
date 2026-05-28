@@ -3238,7 +3238,11 @@ async function parseOneStream(file){
                 const plk=parseInt(row[0]);
                 if(!isNaN(plk)&&plk>0&&srMap[plk]){
                   const v=fn(row[24]);       // col Y: YTD Avg. Tickets
-                  if(v!=null){ srMap[plk].tickets=v; ticketPLKs.add(plk); }
+                  // Register PLK regardless of whether col Y has a value — the clearing loop
+                  // below must not wipe tickets for stores that appear in this sheet, even if
+                  // col Y happens to be 0/null for this period.
+                  ticketPLKs.add(plk);
+                  if(v!=null) srMap[plk].tickets=v;
                 }
               }
             }
