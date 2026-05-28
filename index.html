@@ -2630,6 +2630,7 @@ async function parsePL(file){
       // Rent %: exact same month as Rent $
       const v=parsePct(row[rentMaxCol]);
       s.cur_rent_pct=(v!=null&&v!==0)?v:null;
+      seen.add(plk);
     } else if(cat==='EBITDA'){
       if(!s.ebitda_monthly) s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
       let matched=0;
@@ -2639,6 +2640,7 @@ async function parsePL(file){
         if(idx>=0){s.ebitda_monthly[idx]=parseNum(row[c]); matched++;}
       }
       if(matched>0) nEbitda++;
+      seen.add(plk);
     } else if(cat==='Net Sales'||cat==='Net Sales '||cat==='Net Revenue'||cat==='Total Net Sales'){
       // Net Sales row — used for ann_ebitda_pct = ttm_ebitda / ttm_net_sales
       if(!s.net_sales_monthly) s.net_sales_monthly=new Array(EBITDA_MONTHS.length).fill(null);
@@ -2647,6 +2649,7 @@ async function parsePL(file){
         const idx=EBITDA_MONTHS.indexOf(lbl);
         if(idx>=0) s.net_sales_monthly[idx]=parseNum(row[c]);
       }
+      seen.add(plk);
     }
   }
   // Stores in SR but NOT in this P&L file: explicitly null out EBITDA and rent fields
