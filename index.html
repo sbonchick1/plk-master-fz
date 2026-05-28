@@ -1244,7 +1244,7 @@ function handleUpload(id, inp){
           const plk=parseInt(row[cm.plk]); if(isNaN(plk)||plk<=0) continue;
           if(mpMap[plk]) continue;
           const s={plk};
-          if(cm.subcluster!=null&&row[cm.subcluster]!=null){ const v=String(row[cm.subcluster]).trim(); if(v) s.subcluster=v; }
+          if(cm.subcluster!=null&&row[cm.subcluster]!=null){ const v=String(row[cm.subcluster]).trim(),vL=v.toLowerCase(); if(v&&vL!=='na'&&vL!=='n/a'&&vL!=='-'&&vL!=='none'&&vL!=='null') s.subcluster=v; }
           if(cm.pop!=null&&row[cm.pop]!=null){ const pop=parseNum(row[cm.pop]); if(pop!=null&&pop>0) s.mp_pop=pop; }
           mpMap[plk]=s;
         }
@@ -2649,6 +2649,18 @@ async function parsePL(file){
       }
     }
   }
+  // Stores in SR but NOT in this P&L file: explicitly null out EBITDA and rent fields
+  // so stale prior-period data can't distort FZ Summary averages on the next page reload.
+  SR.forEach(s=>{
+    if(!seen.has(s.plk)){
+      s.ebitda_monthly=null;
+      s.net_sales_monthly=null;
+      s.cur_rent=null;
+      s.cur_rent_pct=null;
+    }
+  });
+  window._plParsed=true; // flag: this Generate included P&L data
+
   log('✓ P&L: '+n+' stores updated | Rent values: '+nRent+' | EBITDA rows matched: '+nEbitda
     +' | header row: '+(hr+1)+' | catCol: '+catCol+' | monthStart: '+monthStart
     +' | months: '+monthLabels.slice(0,3).join(',')+' … '+monthLabels.slice(-2).join(','));
@@ -2782,8 +2794,15 @@ async function parseMP(file){
     const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
     const plk=parseInt(row[cm.plk]); if(isNaN(plk)||plk<=0) continue;
     const s=srMap[plk]; if(!s) continue;
-    if(row[cm.subcluster]!=null&&String(row[cm.subcluster]).trim()!==''){
-      s.subcluster=String(row[cm.subcluster]).trim(); nSub++;
+    if(row[cm.subcluster]!=null){
+      const _sc=String(row[cm.subcluster]).trim();
+      const _scL=_sc.toLowerCase();
+      // Treat placeholder values as blank — they render as "-" like any other null field
+      if(_sc!==''&&_scL!=='na'&&_scL!=='n/a'&&_scL!=='-'&&_scL!=='none'&&_scL!=='null'){
+        s.subcluster=_sc; nSub++;
+      } else {
+        s.subcluster=null; // explicitly clear in case a prior snap had a stale value
+      }
     }
     if(cm.pop!=null&&row[cm.pop]!=null){
       const pop=parseNum(row[cm.pop]); if(pop!=null&&pop>0){ s.mp_pop=pop; nPop++; }
@@ -3143,6 +3162,7 @@ async function parseOneStream(file){
             if(tr) log('  First data row monthly cols (startCol='+tr.startCol+'): '+JSON.stringify(_dbgRow.slice(tr.startCol,tr.startCol+6)));
           }
           if(tr&&dr>=0){
+            const osPLKs=new Set(); // track stores found in this OneStream file
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row||row[0]==null) continue;
               const plk=parseInt(row[0]); if(isNaN(plk)||!srMap[plk]) continue;
@@ -3164,8 +3184,14 @@ async function parseOneStream(file){
                 const idx=SALES_MONTHS.indexOf(lbl);
                 if(idx>=0) s.monthly_sales[idx]=parsed;
               });
+              osPLKs.add(plk);
               nSales++;
             }
+            // Stores in SR but NOT in this OneStream file: explicitly null out monthly_sales
+            // so stale prior-period data (from SR_DEFAULT or old delta) can't distort averages.
+            // Matches Excel backend behavior where missing stores have blank ARS column.
+            SR.forEach(s=>{ if(!osPLKs.has(s.plk)){ s.monthly_sales=null; s.ms_prev=null; } });
+            window._oneStreamParsed=true; // flag: this Generate included OneStream data
           }
           log('  OneStream sheet: '+nSales+' stores updated (monthly sales)');
         }
@@ -3198,6 +3224,8 @@ async function parseOneStream(file){
             // Helper: treat 0 as null (OneStream "Display no Data as Zero")
             const fp=v=>{const n=parsePct(v);return (n===0||n===null)?null:n;};
             const fn=v=>{const n=parseNum(v);return (n===0||n===null)?null:n;};
+            const sstPLKs=new Set(); // track stores found in SSS&SST sheet
+            const ticketPLKs=new Set(); // track stores found via col A (YTD Avg Tickets)
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row) continue;
               // SSS / SST / monthly tickets — match on col D PLK#
@@ -3210,6 +3238,7 @@ async function parseOneStream(file){
                   s.sst_mo    =fp(row[7]);   // col H: Monthly SST
                   s.sst       =fp(row[8]);   // col I: YTD SST
                   s.tickets_mo=fn(row[9]);   // col J: Monthly Total Tickets
+                  sstPLKs.add(plk);
                   nSST++;
                 }
               }
@@ -3218,10 +3247,20 @@ async function parseOneStream(file){
                 const plk=parseInt(row[0]);
                 if(!isNaN(plk)&&plk>0&&srMap[plk]){
                   const v=fn(row[24]);       // col Y: YTD Avg. Tickets
-                  if(v!=null) srMap[plk].tickets=v;
+                  if(v!=null){ srMap[plk].tickets=v; ticketPLKs.add(plk); }
                 }
               }
             }
+            // Stores in SR but NOT in this SSS&SST sheet: explicitly null out SSS/SST/traffic
+            // so stale prior-period data can't distort FZ Summary averages on the next reload.
+            SR.forEach(s=>{
+              if(!sstPLKs.has(s.plk)){
+                s.sss=null; s.sss_mo=null;
+                s.sst=null; s.sst_mo=null;
+                s.tickets_mo=null;
+              }
+              if(!ticketPLKs.has(s.plk)) s.tickets=null;
+            });
           }
           // Diagnostic: show first matched store values
           const _dbgS=SR.find(s=>s.sss!=null||s.sst!=null||s.tickets!=null);
@@ -3386,9 +3425,9 @@ function calculateFields(){
       }
     }
 
-    // TTM ARS from OneStream monthly sales array
-    // Only clear when we have a fresh monthly_sales array to recompute from.
-    // If monthly_sales is absent, leave existing values (from localStorage/SR_DEFAULT).
+    // TTM ARS from OneStream monthly sales array.
+    // When monthly_sales is null (store not in this period's OneStream file),
+    // clear ARS fields — matches Excel blank behavior, prevents stale values in averages.
     if(s.monthly_sales&&s.monthly_sales.length>0){
       const vals=s.monthly_sales.slice(0,SALES_MONTHS.length).filter(v=>v!=null&&v!==0);
       s.store_months_sales=vals.length;
@@ -3396,12 +3435,22 @@ function calculateFields(){
       s.ann_ars =(s.ttm_ars!=null&&s.store_months_sales>0)
                  ?s.ttm_ars/s.store_months_sales*12:null;
     } else {
-      // No monthly sales array — all TTM months are dash, so store months = 0
-      // (ttm_ars/ann_ars intentionally preserved from baked/snap values)
+      // No monthly_sales array — clear ARS fields so stores without current-period
+      // OneStream data show blank in MSF and are excluded from FZ Summary averages.
+      // Matches Excel backend behavior: stores not in the OneStream file have blank ARS.
       s.store_months_sales=0;
+      s.ttm_ars=null;
+      s.ann_ars=null;
     }
 
-    if(!s.ebitda_monthly||!s.ebitda_monthly.length) s.store_months_ebitda=0;
+    if(!s.ebitda_monthly||!s.ebitda_monthly.length){
+      // No EBITDA data — clear all EBITDA fields so stores without current-period P&L data
+      // show blank in MSF and are excluded from FZ Summary averages. Mirrors ARS clearing above.
+      s.store_months_ebitda=0;
+      s.ttm_ebitda=null;
+      s.ann_ebitda=null;
+      s.ann_ebitda_pct=null;
+    }
 
     // Ownership / concentration metrics
     s.rest_owned       =s.fru?fruCount[s.fru]||1:null;
@@ -3442,7 +3491,8 @@ function calculateFields(){
 // Mirrors backend FZ Summary tab formulas (sheet3.xml) exactly.
 function buildFR(){
   // K: ARS Index denom = AVERAGE(MSF!$AJ:$AJ) — system-wide avg annualized ARS
-  const arsAll=SR.map(s=>s.ann_ars).filter(v=>v!=null&&v>0);
+  // Match AVERAGEIF semantics: include all non-null values (same as ann_ebitda).
+  const arsAll=SR.map(s=>s.ann_ars).filter(v=>v!=null);
   const sysAvgArs=arsAll.length?arsAll.reduce((a,b)=>a+b,0)/arsAll.length:null;
 
   // Group by FRU (Reporting Unit = MSF col C)
@@ -3478,39 +3528,22 @@ function buildFR(){
     }).length;
     // H: DMA Count — COUNT(UNIQUE(FILTER(MSF DMA col H, FRU=$B6)))
     const dmas=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:(s.dma||'')).filter(Boolean));
-    // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6))) — pending
-    const subs=new Set(ss.map(s=>s.subcluster).filter(Boolean));
+    // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
+    // Exclude null, empty, "-" and "NA"/"N/A" — these are Excel formula placeholders for
+    // stores with no subcluster assignment, not real geographic sub-cluster names.
+    const _subExclude=new Set(['-','na','n/a','n/a','none','null']);
+    const subs=new Set(ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase())));
     // J: Annualized ARS — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AJ:$AJ)
-    const arsS=ss.filter(s=>s.ann_ars!=null&&s.ann_ars>0);
-    const avgArs=arsS.length?arsS.reduce((a,s)=>a+s.ann_ars,0)/arsS.length:null;
+    // Use avg() (null-excluding, same as AVERAGEIF) — no >0 guard so a store displaying
+    // $0 in MSF col AJ is included, keeping FZ Summary consistent with manual MSF average.
+    const avgArs=avg(ss.map(s=>s.ann_ars));
     // K: ARS Index — J6 / AVERAGE(MSF!$AJ:$AJ) × 100
     const arsIdx=avgArs!=null&&sysAvgArs?avgArs/sysAvgArs*100:null;
     // L: Annualized EBITDA — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AY:$AY)
-    const ebS=ss.filter(s=>s.ann_ebitda!=null);
-    const avgEb=ebS.length?ebS.reduce((a,s)=>a+s.ann_ebitda,0)/ebS.length:null;
-    // M: Annualized EBITDA % — SUMIF(FRU, ttm_ebitda) / SUMIF(FRU, ttm_net_sales)
-    // Mirrors backend formula: col DI (TTM EBITDA) / col DH (TTM Net Sales).
-    // Franchisees: denominator = full sum(net_sales_monthly) — matches SUMIF(col DH).
-    // Company stores (no P&L): denominator = sum of matching OneStream monthly sales.
-    let sumE=0,sumNS=0,hasEP=false;
-    ss.forEach(s=>{
-      if(s.ttm_ebitda==null) return;
-      if(s.net_sales_monthly){
-        // Franchisee: use full TTM net sales sum — matches SUMIF(col DH) exactly
-        const ttmNS=s.net_sales_monthly.reduce((a,v)=>a+(v!=null?v:0),0);
-        if(ttmNS>0){sumE+=s.ttm_ebitda;sumNS+=ttmNS;hasEP=true;}
-      } else if(s.fru==='Company'&&s.monthly_sales&&s.ebitda_monthly){
-        // Company: no P&L — use matching OneStream sales months as denominator
-        let ns=0,e=0;
-        s.ebitda_monthly.forEach((ev,i)=>{
-          if(ev==null) return;
-          if(i===0){if(s.ms_prev!=null){e+=ev;ns+=s.ms_prev;}}
-          else{const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}}
-        });
-        if(ns>0){sumE+=e;sumNS+=ns;hasEP=true;}
-      }
-    });
-    const avgEbPct=hasEP&&sumNS>0?sumE/sumNS:null;
+    const avgEb=avg(ss.map(s=>s.ann_ebitda));
+    // M: Annualized EBITDA % — AVERAGEIF(MSF!$C:$C, $B6, MSF!ann_ebitda_pct col)
+    // Simple null-excluding average of each store's ann_ebitda_pct, matching AVERAGEIF exactly.
+    const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
     // N: YTD SSS — backend: SUMIF(CY comparable sales) / SUMIF(PY comparable sales) − 1 (weighted by volume).
     // We only store the pre-computed per-store ratio (s.sss), not the raw CY/PY components from OneStream.
     // Result: sales-weighted avg approximated by weighting each store's sss by its TTM ARS.
@@ -3558,7 +3591,8 @@ function buildFR(){
 // Mirrors backend DMA Summary tab formulas (sheet4.xml) exactly.
 function buildDR(){
   // I: ARS Index denom = AVERAGE(MSF!$AJ:$AJ) — system-wide avg annualized ARS
-  const arsAll=SR.map(s=>s.ann_ars).filter(v=>v!=null&&v>0);
+  // Match AVERAGEIF semantics: include all non-null values, no >0 guard.
+  const arsAll=SR.map(s=>s.ann_ars).filter(v=>v!=null);
   const sysAvgArs=arsAll.length?arsAll.reduce((a,b)=>a+b,0)/arsAll.length:null;
 
   // Group by DMA ID (MSF col I). Fall back to DMA name if no ID.
@@ -3590,33 +3624,15 @@ function buildDR(){
       return false;
     }).length;
     // H: Annualized ARS — AVERAGEIF(MSF!$I:$I, $B6, MSF!$AJ:$AJ)
-    const arsS=ss.filter(s=>s.ann_ars!=null&&s.ann_ars>0);
-    const avgArs=arsS.length?arsS.reduce((a,s)=>a+s.ann_ars,0)/arsS.length:null;
+    // Use avg() (null-excluding, matches AVERAGEIF) — no >0 guard for consistency.
+    const avgArs=avg(ss.map(s=>s.ann_ars));
     // I: ARS Index — H6 / AVERAGE(MSF!$AJ:$AJ) × 100
     const arsIdx=avgArs!=null&&sysAvgArs?avgArs/sysAvgArs*100:null;
     // J: Annualized EBITDA — AVERAGEIF(MSF!$I:$I, $B6, MSF!$AY:$AY)
-    const ebS=ss.filter(s=>s.ann_ebitda!=null);
-    const avgEb=ebS.length?ebS.reduce((a,s)=>a+s.ann_ebitda,0)/ebS.length:null;
-    // K: Annualized EBITDA % — SUMIF(DMA, MSF col DI = TTM EBITDA) / SUMIF(DMA, MSF col DH = TTM Net Sales)
-    // Franchisees: use net_sales_monthly (P&L). Company stores: use monthly_sales (OneStream).
-    let sumE=0,sumNS=0,hasEP=false;
-    ss.forEach(s=>{
-      if(s.ttm_ebitda==null||!s.ebitda_monthly) return;
-      if(s.net_sales_monthly){
-        // Franchisee: P&L net sales
-        let ns=0; s.ebitda_monthly.forEach((ev,i)=>{if(ev!=null&&s.net_sales_monthly[i]!=null)ns+=s.net_sales_monthly[i];});
-        if(ns>0){sumE+=s.ttm_ebitda;sumNS+=ns;hasEP=true;}
-      } else if(s.fru==='Company'&&s.monthly_sales){
-        // Company: use ms_prev for EBITDA_MONTHS[0], monthly_sales for the rest
-        let ns=0,e=0; s.ebitda_monthly.forEach((ev,i)=>{
-          if(ev==null) return;
-          if(i===0){if(s.ms_prev!=null){e+=ev;ns+=s.ms_prev;}}
-          else{const sidx=SALES_MONTHS.indexOf(EBITDA_MONTHS[i]);if(sidx>=0&&s.monthly_sales[sidx]!=null){e+=ev;ns+=s.monthly_sales[sidx];}}
-        });
-        if(ns>0){sumE+=e;sumNS+=ns;hasEP=true;}
-      }
-    });
-    const avgEbPct=hasEP&&sumNS>0?sumE/sumNS:null;
+    const avgEb=avg(ss.map(s=>s.ann_ebitda));
+    // K: Annualized EBITDA % — AVERAGEIF(MSF!$I:$I, $B6, MSF!ann_ebitda_pct col)
+    // Simple null-excluding average of each store's ann_ebitda_pct, matching AVERAGEIF exactly.
+    const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
     // L: SSS YTD — OneStream: SUMIF(DMA ID col C, $B6, CY sales) / SUMIF(..., PY sales) − 1
     //    Approx: avg(s.sss) per store (exact needs raw OS CY/PY sales per store)
     const avgSSS=avg(ss.map(s=>s.sss));
@@ -4451,7 +4467,19 @@ async function saveState(){
   let nStores=0;
   SR.forEach(s=>{
     const d={};
-    PERSIST_KEYS.forEach(k=>{ const v=s[k]; if(v!=null) d[k]=v; });
+    PERSIST_KEYS.forEach(k=>{
+      const v=s[k];
+      // For fields that were explicitly cleared by a parser in this Generate, save the null
+      // so the delta can override stale SR_DEFAULT values on the next page reload.
+      // Without this, a page reload would restore old prior-period data from SR_DEFAULT base.
+      const saveNull=(
+        (k==='monthly_sales'&&window._oneStreamParsed) ||
+        (k==='sss'||k==='sst'||k==='sss_mo'||k==='sst_mo'||k==='tickets_mo'||k==='tickets')&&window._oneStreamParsed ||
+        (k==='ebitda_monthly'||k==='net_sales_monthly'||k==='cur_rent'||k==='cur_rent_pct')&&window._plParsed
+      );
+      if(saveNull) d[k]=v;
+      else if(v!=null) d[k]=v;
+    });
     if(Object.keys(d).length>0){ delta[s.plk]=d; nStores++; }
   });
   try{
