@@ -4286,6 +4286,42 @@ const PERSIST_KEYS=[
 ];
 const LS_KEY='plk_sr_delta_v2';
 
+// ─── IndexedDB wrapper for the financial delta ─────────────────────────────
+// localStorage has a ~5-10 MB total quota; the delta alone can be 3-5 MB and
+// pushed us over after all the snaps wrote. IndexedDB has a much larger quota
+// (typically 50% of available disk), so we store the delta there. The other
+// per-source snaps stay in localStorage — they're small enough.
+const IDB_NAME='plk_master_fz';
+const IDB_STORE='delta';
+const IDB_KEY='delta_v1';
+function _idbOpen(){
+  return new Promise((resolve,reject)=>{
+    if(!window.indexedDB){ reject(new Error('IndexedDB not supported')); return; }
+    const req=indexedDB.open(IDB_NAME,1);
+    req.onupgradeneeded=()=>{ req.result.createObjectStore(IDB_STORE); };
+    req.onsuccess=()=>resolve(req.result);
+    req.onerror=()=>reject(req.error);
+  });
+}
+async function _idbPut(value){
+  const db=await _idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(IDB_STORE,'readwrite');
+    tx.objectStore(IDB_STORE).put(value,IDB_KEY);
+    tx.oncomplete=()=>{ db.close(); resolve(); };
+    tx.onerror=()=>{ db.close(); reject(tx.error); };
+  });
+}
+async function _idbGet(){
+  const db=await _idbOpen();
+  return new Promise((resolve,reject)=>{
+    const tx=db.transaction(IDB_STORE,'readonly');
+    const req=tx.objectStore(IDB_STORE).get(IDB_KEY);
+    req.onsuccess=()=>{ db.close(); resolve(req.result||null); };
+    req.onerror=()=>{ db.close(); reject(req.error); };
+  });
+}
+
 function _saveDeltaToLS(){
   // Merge with existing cache so files not re-uploaded this session stay preserved
   let existingDelta={};
@@ -4428,12 +4464,22 @@ async function saveState(){
     });
     if(Object.keys(d).length>0){ delta[s.plk]=d; nStores++; }
   });
+  // Try IndexedDB first (no quota issues), fall back to localStorage
   try{
-    const json=JSON.stringify(delta);
-    localStorage.setItem(LS_KEY, json);
-    log('[Persist] Delta saved: '+nStores+' stores, '+Math.round(json.length/1024)+' KB (key: '+LS_KEY+')');
-  }catch(e){
-    log('[Persist] Delta SAVE ERROR: '+e.message);
+    await _idbPut(delta);
+    const sizeKB=Math.round(JSON.stringify(delta).length/1024);
+    log('[Persist] Delta saved to IndexedDB: '+nStores+' stores, ~'+sizeKB+' KB');
+    // Clean up old localStorage delta so it doesn't shadow IDB on next load
+    try{ localStorage.removeItem(LS_KEY); }catch(e){}
+  }catch(idbErr){
+    log('[Persist] IndexedDB save failed: '+idbErr.message+' — falling back to localStorage');
+    try{
+      const json=JSON.stringify(delta);
+      localStorage.setItem(LS_KEY, json);
+      log('[Persist] Delta saved to localStorage: '+nStores+' stores, '+Math.round(json.length/1024)+' KB');
+    }catch(e){
+      log('[Persist] Delta SAVE ERROR: '+e.message);
+    }
   }
 
   // ── 3. Also try server (works locally; no-ops on Vercel where /api/save-state is not routed) ──
@@ -4447,16 +4493,27 @@ async function saveState(){
 async function loadSavedState(){
   let loaded=false;
 
-  // Diagnostic: always show what is in localStorage right now
-  const rawCheck=localStorage.getItem(LS_KEY);
-  if(rawCheck){
-    try{
-      const chk=JSON.parse(rawCheck);
-      const cnt=Object.keys(chk).filter(k=>k!=='savedAt').length;
-      log('[Persist] Browser cache found: '+cnt+' stores, saved: '+(chk.savedAt||'unknown'));
-    }catch(e){ log('[Persist] Browser cache exists but parse failed: '+e.message); }
-  } else {
-    log('[Persist] Browser cache EMPTY (key: '+LS_KEY+') â€” no data to restore');
+  // Load the delta — try IndexedDB first (preferred), fall back to localStorage.
+  // The result is held in `deltaForMerge` and applied in step 6 below.
+  let deltaForMerge=null;
+  try{
+    deltaForMerge=await _idbGet();
+    if(deltaForMerge){
+      const cnt=Object.keys(deltaForMerge).filter(k=>k!=='savedAt').length;
+      log('[Persist] IndexedDB cache found: '+cnt+' stores, saved: '+(deltaForMerge.savedAt||'unknown'));
+    }
+  }catch(e){ log('[Persist] IndexedDB read error: '+e.message); }
+  if(!deltaForMerge){
+    const rawCheck=localStorage.getItem(LS_KEY);
+    if(rawCheck){
+      try{
+        deltaForMerge=JSON.parse(rawCheck);
+        const cnt=Object.keys(deltaForMerge).filter(k=>k!=='savedAt').length;
+        log('[Persist] localStorage cache found: '+cnt+' stores, saved: '+(deltaForMerge.savedAt||'unknown'));
+      }catch(e){ log('[Persist] localStorage delta parse failed: '+e.message); }
+    } else {
+      log('[Persist] No delta in IndexedDB or localStorage — no data to restore');
+    }
   }
 
   // Helper: overlay a snap's fields onto existing SR stores
@@ -4578,12 +4635,12 @@ async function loadSavedState(){
   }catch(e){ log('[Persist] FG snap restore error: '+e.message); }
 
   // 6. Merge PERSIST_KEYS delta on top (monthly sales/EBITDA/SSS/etc.)
-  if(rawCheck){
+  // deltaForMerge was loaded above from IndexedDB (preferred) or localStorage (fallback)
+  if(deltaForMerge){
     try{
-      const delta=JSON.parse(rawCheck);
       const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
       let n=0,missed=0;
-      Object.entries(delta).forEach(([plkStr,fields])=>{
+      Object.entries(deltaForMerge).forEach(([plkStr,fields])=>{
         if(plkStr==='savedAt') return;
         const s=srMap[parseInt(plkStr)]; if(!s){missed++;return;}
         Object.assign(s,fields); n++;
