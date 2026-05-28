@@ -986,6 +986,29 @@ function handleUpload(id, inp){
         // stripping fru/city/state/address/lat/lon/royalty/etc. for ALL stores.
         try{ await fetch('/api/save-state',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({sr:alignSnap,savedAt,_plkListOnly:true})}); }catch(e){}
+
+        // ── Refresh in-memory SR immediately so FZ/DMA Summary store counts and
+        // structural columns (Division, DMA, 2026 Openings, etc.) are live without
+        // waiting for a page reload or Generate click.
+        // Strategy: for each store in the new alignment, start with SR_DEFAULT base
+        // (preserves city/state/fru/royalty/etc.), overlay current in-memory financial
+        // data (preserves ebitda_monthly/monthly_sales/sss/etc. from last Generate),
+        // then apply fresh alignment fields on top.
+        {
+          const _oldMap={}; SR.forEach(s=>{_oldMap[s.plk]=s;});
+          const _defMap={}; (window.SR_DEFAULT||[]).forEach(s=>{if(s&&s.plk)_defMap[s.plk]=s;});
+          const _merged=newStores.map(s=>{
+            const base=_defMap[s.plk]?Object.assign({},_defMap[s.plk]):{plk:s.plk};
+            if(_oldMap[s.plk]) Object.assign(base,_oldMap[s.plk]); // keep financial data
+            Object.assign(base,s); // fresh alignment fields win
+            return base;
+          });
+          SR.splice(0,SR.length,..._merged);
+          calculateFields();
+          buildFR(); buildDR();
+          buildFilters(); filterMaster(); renderFZ(); renderDMA();
+          log('[Align scan] Live SR updated: '+SR.length+' stores — FZ/DMA Summary refreshed');
+        }
       }catch(e){ log('[Align scan] Error: '+e.message); }
     })();
   }
@@ -1058,6 +1081,21 @@ function handleUpload(id, inp){
         // POST as PLK-list-only — prevents server from overwriting SR_DEFAULT with MDS-only data
         try{ await fetch('/api/save-state',{method:'POST',headers:{'Content-Type':'application/json'},
           body:JSON.stringify({sr:mdsSnap,savedAt,_plkListOnly:true})}); }catch(e){}
+
+        // ── Overlay MDS fields onto in-memory SR immediately so FZ/DMA Summary
+        // FRU groupings (fru/op/fg) are live without a page reload or Generate.
+        {
+          const srMap={}; SR.forEach(s=>{srMap[s.plk]=s;});
+          Object.values(mdsMap).forEach(mds=>{
+            const s=srMap[mds.plk]; if(!s) return;
+            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; });
+            if(s.drive_thru_type) s.drive_thru_type=normalizeDriveThruType(s.drive_thru_type);
+          });
+          calculateFields();
+          buildFR(); buildDR();
+          filterMaster(); renderFZ(); renderDMA();
+          log('[MDS scan] Live SR overlaid — FZ/DMA Summary FRU groupings refreshed');
+        }
       }catch(e){ log('[MDS scan] Error: '+e.message); }
     })();
   }
