@@ -1241,18 +1241,22 @@ function handleUpload(id, inp){
           {key:'plk',       terms:['rest #','rest#','plk#','plk #','restaurant #','store#']},
           {key:'subcluster',terms:['subcluster','sub-cluster','sub cluster']},
           {key:'pop',       terms:['effective pop','effective population','population']},
+          {key:'dma_code',  terms:['dma code','dma id','dma #','dma_code','dma_id']},
         ]);
         if(cm.plk==null){ log('[MP scan] Rest # column not found'); return; }
-        // Pass 1: Build DMA-code → Effective Population map (col I=8, col J=9 per backend)
+        // Pass 1: Build DMA-code → Effective Population map. Use detected cols or col I/J fallback.
+        const dmaCodeIdx=cm.dma_code!=null?cm.dma_code:8;
+        const popIdx=cm.pop!=null?cm.pop:9;
         const dmaPopMap={};
         for(let r=hr+1;r<aoa.length;r++){
           const row=aoa[r]; if(!row) continue;
-          const dmaCode=parseInt(row[8]);
-          const pop=parseNum(row[9]);
+          const dmaCode=parseInt(row[dmaCodeIdx]);
+          const pop=parseNum(row[popIdx]);
           if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null){
             dmaPopMap[dmaCode]=pop;
           }
         }
+        log('[MP scan] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND')+' | cols: dma_code idx='+dmaCodeIdx+' pop idx='+popIdx);
         // Pass 2: Per-store subcluster, plus DMA-code-matched population
         const mpMap={};
         for(let r=hr+1;r<aoa.length;r++){
@@ -1261,8 +1265,7 @@ function handleUpload(id, inp){
           if(mpMap[plk]) continue;
           const s={plk};
           if(cm.subcluster!=null&&row[cm.subcluster]!=null){ const v=String(row[cm.subcluster]).trim(),vL=v.toLowerCase(); if(v&&vL!=='na'&&vL!=='n/a'&&vL!=='-'&&vL!=='none'&&vL!=='null') s.subcluster=v; }
-          // Apply DMA-code-matched population if row has a DMA code
-          const rowDmaCode=parseInt(row[8]);
+          const rowDmaCode=parseInt(row[dmaCodeIdx]);
           if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null) s.mp_pop=dmaPopMap[rowDmaCode];
           mpMap[plk]=s;
         }
@@ -2792,23 +2795,35 @@ async function parseMP(file){
     {key:'plk',       terms:['rest #','rest#','plk#','plk #','restaurant #','store#']},
     {key:'subcluster',terms:['subcluster','sub-cluster','sub cluster']},
     {key:'pop',       terms:['effective pop','effective population','population']},
+    {key:'dma_code',  terms:['dma code','dma id','dma #','dma_code','dma_id']},
   ]);
   if(cm.plk==null){log('⚠ Market Planning: "Rest #" column not found'); return;}
   if(cm.subcluster==null){log('⚠ Market Planning: "Subcluster" column not found'); return;}
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
 
+  // Diagnostic: log what we detected for header columns
+  log('[MP cols] plk='+cm.plk+' subcluster='+cm.subcluster+' pop='+cm.pop+' dma_code='+cm.dma_code+' (col I=8, col J=9 assumed)');
+  // Show first 3 data rows' col I and col J to verify they hold DMA code and population
+  for(let i=0;i<3;i++){
+    const row=aoa[hr+1+i]; if(!row) continue;
+    log('[MP row '+(hr+1+i)+'] col I (idx 8)='+JSON.stringify(row[8])+' | col J (idx 9)='+JSON.stringify(row[9])+(cm.dma_code!=null?' | hdr dma_code (idx '+cm.dma_code+')='+JSON.stringify(row[cm.dma_code]):'')+(cm.pop!=null?' | hdr pop (idx '+cm.pop+')='+JSON.stringify(row[cm.pop]):''));
+  }
+
   // Pass 1: Build DMA-code → Effective Population map.
-  // Per backend spec: col I (index 8) = DMA Code, col J (index 9) = Effective Population.
-  // This is a DMA-level lookup, so any row that has both is captured.
+  // Prefer header-based dma_code column; fall back to col I (index 8). Same for pop (header / col J=9).
+  const dmaCodeIdx=cm.dma_code!=null?cm.dma_code:8;
+  const popIdx=cm.pop!=null?cm.pop:9;
   const dmaPopMap={};
   for(let r=hr+1;r<aoa.length;r++){
     const row=aoa[r]; if(!row) continue;
-    const dmaCode=parseInt(row[8]);
-    const pop=parseNum(row[9]);
+    const dmaCode=parseInt(row[dmaCodeIdx]);
+    const pop=parseNum(row[popIdx]);
     if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null){
       dmaPopMap[dmaCode]=pop;
     }
   }
+  // Diagnostic: confirm 618 (Houston) is mapped and to what value
+  log('[MP] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND')+' | sample: '+Object.entries(dmaPopMap).slice(0,5).map(([k,v])=>k+'='+v).join(','));
 
   // Pass 2: Per-store subcluster + apply DMA pop based on each store's dma_id matching col I.
   let nSub=0, nPop=0, nDmaPop=0;
@@ -2825,9 +2840,8 @@ async function parseMP(file){
         s.subcluster=null;
       }
     }
-    // Population is now sourced from the DMA-code map (col I → col J).
-    // Apply by matching store's dma_id to the row's DMA code (col I, index 8).
-    const rowDmaCode=parseInt(row[8]);
+    // Population is sourced from the DMA-code map. Use detected dma_code col or fallback index 8.
+    const rowDmaCode=parseInt(row[dmaCodeIdx]);
     if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null){ s.mp_pop=dmaPopMap[rowDmaCode]; nPop++; }
   }
   // Also apply to any SR store whose dma_id is in the map but whose row wasn't iterated
