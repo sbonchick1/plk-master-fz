@@ -2652,18 +2652,6 @@ async function parsePL(file){
       seen.add(plk);
     }
   }
-  // Stores in SR but NOT in this P&L file: explicitly null out EBITDA and rent fields
-  // so stale prior-period data can't distort FZ Summary averages on the next page reload.
-  SR.forEach(s=>{
-    if(!seen.has(s.plk)){
-      s.ebitda_monthly=null;
-      s.net_sales_monthly=null;
-      s.cur_rent=null;
-      s.cur_rent_pct=null;
-    }
-  });
-  window._plParsed=true; // flag: this Generate included P&L data
-
   log('✓ P&L: '+n+' stores updated | Rent values: '+nRent+' | EBITDA rows matched: '+nEbitda
     +' | header row: '+(hr+1)+' | catCol: '+catCol+' | monthStart: '+monthStart
     +' | months: '+monthLabels.slice(0,3).join(',')+' … '+monthLabels.slice(-2).join(','));
@@ -4472,13 +4460,11 @@ async function saveState(){
     const d={};
     PERSIST_KEYS.forEach(k=>{
       const v=s[k];
-      // For fields that were explicitly cleared by a parser in this Generate, save the null
+      // For fields explicitly cleared by a parser in this Generate, save the null
       // so the delta can override stale SR_DEFAULT values on the next page reload.
-      // Without this, a page reload would restore old prior-period data from SR_DEFAULT base.
       const saveNull=(
         (k==='monthly_sales'&&window._oneStreamParsed) ||
-        (k==='sss'||k==='sst'||k==='sss_mo'||k==='sst_mo'||k==='tickets_mo'||k==='tickets')&&window._oneStreamParsed ||
-        (k==='ebitda_monthly'||k==='net_sales_monthly'||k==='cur_rent'||k==='cur_rent_pct')&&window._plParsed
+        (k==='sss'||k==='sst'||k==='sss_mo'||k==='sst_mo'||k==='tickets_mo'||k==='tickets')&&window._oneStreamParsed
       );
       if(saveNull) d[k]=v;
       else if(v!=null) d[k]=v;
