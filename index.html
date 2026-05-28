@@ -489,7 +489,7 @@ const FZ_SRC={
   'Annualized ARS':              'Average Annualized Restaurant Sales (ARS) across all stores in this Franchise Reporting Unit, indexed from the Master Store File tab Annualized ARS column. Represents the average store-level annualized sales (USD).',
   'ARS Index':                   'This FRU\'s average Annualized ARS divided by the system-wide average Annualized ARS across all stores, multiplied by 100. A score of 100 equals the system average; above 100 means above average performance.',
   'Annualized EBITDA':           'Average Annualized EBITDA per store in this Franchise Reporting Unit, indexed from the Master Store File tab Annualized EBITDA column. Derived from the P&L Crosstab input (USD).',
-  'Annualized EBITDA %':         'Average Annualized EBITDA % per store in this Franchise Reporting Unit, indexed from the Master Store File tab Annualized EBITDA % column (AVERAGEIF by FRU). Simple null-excluding average of each store\'s Annualized EBITDA %.',
+  'Annualized EBITDA %':         'EBITDA margin for this Franchise Reporting Unit. Computed exactly per the backend formula: SUMIF(FRU, MSF TTM EBITDA col DI) / SUMIF(FRU, MSF TTM Net Sales col DH). Sales-weighted by construction — not a simple average of store margins.',
   'YTD SSS':                     'Year-to-Date Same-Store Sales growth for this Franchise Reporting Unit. Computed exactly per the backend formula: SUMIF(FRU, OneStream CY comp sales col CR) / SUMIF(FRU, OneStream PY comp sales col CS) − 1. Sales-weighted by construction.',
   'YTD SST':                     'Year-to-Date Same-Store Traffic growth for this Franchise Reporting Unit. Computed exactly per the backend formula: SUMIF(FRU, OneStream CY comp traffic col CW) / SUMIF(FRU, OneStream PY comp traffic col CX) − 1. Traffic-weighted by construction.',
   'YTD Avg. Traffic':            'Average Year-to-Date ticket (transaction) count per store for this Franchise Reporting Unit. Calculated as the total YTD ticket count from the Master Store File tab divided by the total number of stores (including stores with no traffic data on file).',
@@ -510,7 +510,7 @@ const DMA_SRC={
   'Annualized ARS':           'Average Annualized Restaurant Sales (ARS) per store in this DMA, indexed from the Master Store File tab Annualized ARS column. Represents average store-level annualized sales in USD.',
   'ARS Index':                'This DMA\'s average Annualized ARS divided by the system-wide average Annualized ARS across all stores, multiplied by 100. A score of 100 equals the system average; above 100 means this DMA outperforms the chain average.',
   'Annualized EBITDA':        'Average Annualized EBITDA per store in this DMA, indexed from the Master Store File tab Annualized EBITDA column. Derived from the P&L Crosstab input (USD).',
-  'Annualized EBITDA %':      'Average Annualized EBITDA % per store in this DMA, indexed from the Master Store File tab Annualized EBITDA % column (AVERAGEIF by DMA). Simple null-excluding average of each store\'s Annualized EBITDA %.',
+  'Annualized EBITDA %':      'EBITDA margin for this DMA. Computed exactly per the backend formula: SUMIF(DMA, MSF TTM EBITDA col DI) / SUMIF(DMA, MSF TTM Net Sales col DH). Sales-weighted by construction — not a simple average of store margins.',
   'SSS YTD':                  'Year-to-Date Same-Store Sales growth for this DMA. Computed exactly per the backend formula: SUMIF(DMA, OneStream CY comp sales col CR) / SUMIF(DMA, OneStream PY comp sales col CS) − 1. Sales-weighted by construction.',
   'SST YTD':                  'Year-to-Date Same-Store Traffic growth for this DMA. Computed exactly per the backend formula: SUMIF(DMA, OneStream CY comp traffic col CW) / SUMIF(DMA, OneStream PY comp traffic col CX) − 1. Traffic-weighted by construction.',
   'YTD Avg. Traffic':         'Average Year-to-Date ticket (transaction) count per store in this DMA. Total YTD tickets from the Master Store File tab divided by total store count (including stores with no traffic data on file).',
@@ -3393,7 +3393,7 @@ function calculateFields(){
       s.ttm_ebitda =smE>0?ttmE:null;
       s.ann_ebitda =(s.ttm_ebitda!=null&&smE>0)?s.ttm_ebitda/smE*12:null;
       // Franchisee: use P&L net sales
-      if(hasNS&&ttmNS>0) s.ann_ebitda_pct=s.ttm_ebitda/ttmNS;
+      if(hasNS&&ttmNS>0){ s.ann_ebitda_pct=s.ttm_ebitda/ttmNS; s.ttm_net_sales=ttmNS; }
       // Company store: use OneStream monthly_sales as denominator (no P&L submitted)
       // EBITDA_MONTHS[0] has no overlap in SALES_MONTHS — use ms_prev for it
       if(!hasNS&&isCompany&&s.monthly_sales){
@@ -3407,7 +3407,7 @@ function calculateFields(){
             if(sidx>=0&&s.monthly_sales[sidx]!=null){ coE+=ev; coNS+=s.monthly_sales[sidx]; hasCo=true; }
           }
         }
-        if(hasCo&&coNS>0) s.ann_ebitda_pct=coE/coNS;
+        if(hasCo&&coNS>0){ s.ann_ebitda_pct=coE/coNS; s.ttm_net_sales=coNS; }
       }
     }
 
@@ -3511,9 +3511,12 @@ function buildFR(){
     const arsIdx=avgArs!=null&&sysAvgArs?avgArs/sysAvgArs*100:null;
     // L: Annualized EBITDA — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AY:$AY)
     const avgEb=avg(ss.map(s=>s.ann_ebitda));
-    // M: Annualized EBITDA % — AVERAGEIF(MSF!$C:$C, $B6, MSF!ann_ebitda_pct col)
-    // Simple null-excluding average of each store's ann_ebitda_pct, matching AVERAGEIF exactly.
-    const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
+    // M: Annualized EBITDA % — backend formula:
+    //   =SUMIF(MSF!$C:$C, $B6, MSF!$DI:$DI) / SUMIF(MSF!$C:$C, $B6, MSF!$DH:$DH)
+    //   where DI = TTM EBITDA per store, DH = TTM Net Sales per store.
+    let sumTtmE=0,sumTtmNS=0;
+    ss.forEach(s=>{ if(s.ttm_ebitda!=null) sumTtmE+=s.ttm_ebitda; if(s.ttm_net_sales!=null) sumTtmNS+=s.ttm_net_sales; });
+    const avgEbPct=sumTtmNS>0?sumTtmE/sumTtmNS:null;
     // N: YTD SSS — backend formula:
     //   =SUMIF(OneStream!B, FRU, OneStream!CR) / SUMIF(OneStream!B, FRU, OneStream!CS) − 1
     //   where CR = CY YTD comparable sales, CS = PY YTD comparable sales (per-store raw).
@@ -3604,9 +3607,12 @@ function buildDR(){
     const arsIdx=avgArs!=null&&sysAvgArs?avgArs/sysAvgArs*100:null;
     // J: Annualized EBITDA — AVERAGEIF(MSF!$I:$I, $B6, MSF!$AY:$AY)
     const avgEb=avg(ss.map(s=>s.ann_ebitda));
-    // K: Annualized EBITDA % — AVERAGEIF(MSF!$I:$I, $B6, MSF!ann_ebitda_pct col)
-    // Simple null-excluding average of each store's ann_ebitda_pct, matching AVERAGEIF exactly.
-    const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
+    // K: Annualized EBITDA % — backend formula:
+    //   =SUMIF(MSF!$I:$I, $B6, MSF!$DI:$DI) / SUMIF(MSF!$I:$I, $B6, MSF!$DH:$DH)
+    //   where DI = TTM EBITDA per store, DH = TTM Net Sales per store.
+    let sumTtmE=0,sumTtmNS=0;
+    ss.forEach(s=>{ if(s.ttm_ebitda!=null) sumTtmE+=s.ttm_ebitda; if(s.ttm_net_sales!=null) sumTtmNS+=s.ttm_net_sales; });
+    const avgEbPct=sumTtmNS>0?sumTtmE/sumTtmNS:null;
     // L: SSS YTD — exact backend formula using raw CY/PY comparable sales per store:
     //   SUMIF(DMA, CY comp sales col CR) / SUMIF(DMA, PY comp sales col CS) − 1
     let sssCy=0,sssPy=0;
@@ -4310,6 +4316,7 @@ const PERSIST_KEYS=[
   'monthly_sales','ms_prev',                                       // OneStream sales (uploaded)
   'sss_cy','sss_py','sst_cy','sst_py',                             // OneStream raw CY/PY comp (uploaded) — for exact FZ SUMIF/SUMIF
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',            // OneStream SSS/SST/Traffic (uploaded) — used for MSF per-store display
+  'ttm_net_sales',                                                 // computed in calculateFields — needed for FZ/DMA EBITDA% SUMIF/SUMIF
 ];
 const LS_KEY='plk_sr_delta_v2';
 
