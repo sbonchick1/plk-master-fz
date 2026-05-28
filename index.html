@@ -288,6 +288,12 @@ const C = {
   teal:'00B2A9', purple:'911987', brown:'492A22',
   medbrown:'804000', gold:'BF6000', green:'008680'
 };
+// App version date — auto-derived from the HTML file's last-modified timestamp,
+// so the header chip always reflects when the latest deploy was made.
+const APP_VERSION_DATE=(()=>{
+  const d=new Date(document.lastModified);
+  return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+})();
 const SECTIONS = [
   {l:'Restaurant Information',  span:15, c:C.red},
   {l:'Annual Sales',             span:SALES_MONTHS.length+9, c:C.orange},
@@ -4079,7 +4085,7 @@ async function generateFile(){
     buildSnapSel();   // refresh Snapshot Tool PLK# selector
     updateConfig();   // refresh cfg-lbl timeframe labels
     // Update page header store count
-    {const _m=parseInt(document.getElementById('cfg-month').value),_y=parseInt(document.getElementById('cfg-year').value);const _mn=['','January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('subdesc').textContent=_mn[_m]+' '+_y+' · '+SR.length.toLocaleString()+' restaurants · US & Canada · v2026-05-07';}
+    {const _m=parseInt(document.getElementById('cfg-month').value),_y=parseInt(document.getElementById('cfg-year').value);const _mn=['','January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('subdesc').textContent=_mn[_m]+' '+_y+' · '+SR.length.toLocaleString()+' restaurants · US & Canada · '+APP_VERSION_DATE+'';}
     setP(100);
     log('✓ All tabs refreshed — '+SR.length.toLocaleString()+' stores.');
     // Persist the fully-parsed SR to state.json on the server so data survives page refreshes
@@ -4690,7 +4696,7 @@ async function _init() {
   renderMaster(); renderFZRows(); renderDMARows(); renderCARows();
   buildSnapSel();
   updateConfig();
-  {const _m=parseInt(document.getElementById('cfg-month').value),_y=parseInt(document.getElementById('cfg-year').value);const _mn=['','January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('subdesc').textContent=_mn[_m]+' '+_y+' · '+SR.length.toLocaleString()+' restaurants · US & Canada · v2026-05-07';}
+  {const _m=parseInt(document.getElementById('cfg-month').value),_y=parseInt(document.getElementById('cfg-year').value);const _mn=['','January','February','March','April','May','June','July','August','September','October','November','December'];document.getElementById('subdesc').textContent=_mn[_m]+' '+_y+' · '+SR.length.toLocaleString()+' restaurants · US & Canada · '+APP_VERSION_DATE+'';}
   loadSmartsheet();
   loadServiceMode();
   loadOperations();
