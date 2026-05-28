@@ -1251,7 +1251,10 @@ function handleUpload(id, inp){
           if(mpMap[plk]) continue;
           const s={plk};
           if(cm.subcluster!=null&&row[cm.subcluster]!=null){ const v=String(row[cm.subcluster]).trim(),vL=v.toLowerCase(); if(v&&vL!=='na'&&vL!=='n/a'&&vL!=='-'&&vL!=='none'&&vL!=='null') s.subcluster=v; }
-          if(cm.pop!=null&&row[cm.pop]!=null){ const pop=parseNum(row[cm.pop]); if(pop!=null&&pop>0) s.mp_pop=pop; }
+          // Population: col J (index 9) per backend; fall back to header-based lookup
+          { const popJ=parseNum(row[9]); const popHdr=cm.pop!=null?parseNum(row[cm.pop]):null;
+            const pop=(popJ!=null&&popJ>0)?popJ:(popHdr!=null&&popHdr>0?popHdr:null);
+            if(pop!=null) s.mp_pop=pop; }
           mpMap[plk]=s;
         }
         const mpSnap=Object.values(mpMap).map(s=>{ const o={}; MP_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
@@ -2801,9 +2804,12 @@ async function parseMP(file){
         s.subcluster=null; // explicitly clear in case a prior snap had a stale value
       }
     }
-    if(cm.pop!=null&&row[cm.pop]!=null){
-      const pop=parseNum(row[cm.pop]); if(pop!=null&&pop>0){ s.mp_pop=pop; nPop++; }
-    }
+    // Population: per backend Market Planning file, col J (index 9) holds the population value.
+    // Fall back to header-based lookup if col J doesn't contain a positive numeric.
+    const popJ=parseNum(row[9]);
+    const popHdr=cm.pop!=null?parseNum(row[cm.pop]):null;
+    const pop=(popJ!=null&&popJ>0)?popJ:(popHdr!=null&&popHdr>0?popHdr:null);
+    if(pop!=null){ s.mp_pop=pop; nPop++; }
   }
   log('✓ Market Planning: '+nSub+' stores with sub-cluster | '+nPop+' stores with population data');
 }
