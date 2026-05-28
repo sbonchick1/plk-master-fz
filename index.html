@@ -3659,20 +3659,6 @@ function buildDR(){
   rows.sort((a,b)=>(b[4]||0)-(a[4]||0));
   DR.splice(0,DR.length,...rows);
   log('✓ DMA Summary: '+rows.length+' DMAs built from '+SR.length+' stores');
-  // Diagnostic: log New York's DMA bucket — store count, unique FRUs, and Northeast vs Non-Trad split
-  const _nyGroup=Object.values(dmaMap).find(g=>String(g.dma||'').toLowerCase().includes('new york'));
-  if(_nyGroup){
-    const stores=_nyGroup.stores;
-    const fruSet=new Set(stores.map(s=>s.fru).filter(Boolean));
-    const noFru=stores.filter(s=>!s.fru);
-    const nonTrad=stores.filter(s=>s.div==='Non-Trad');
-    const northeast=stores.filter(s=>s.div==='Northeast');
-    const otherDiv=stores.filter(s=>s.div&&s.div!=='Non-Trad'&&s.div!=='Northeast');
-    log('[DMA diag] New York: '+stores.length+' stores | dma_id='+_nyGroup.dma_id+' | dma="'+_nyGroup.dma+'"');
-    log('[DMA diag] New York divisions: Northeast='+northeast.length+', Non-Trad='+nonTrad.length+(otherDiv.length>0?', Other='+otherDiv.length:''));
-    log('[DMA diag] New York unique FRUs: '+fruSet.size+(noFru.length>0?' ('+noFru.length+' stores have no FRU: '+noFru.map(s=>s.plk).join(',')+')':''));
-    log('[DMA diag] New York FRU list: '+JSON.stringify([...fruSet].sort()));
-  }
 }
 
 function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
