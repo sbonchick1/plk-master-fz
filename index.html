@@ -3659,18 +3659,19 @@ function buildDR(){
   rows.sort((a,b)=>(b[4]||0)-(a[4]||0));
   DR.splice(0,DR.length,...rows);
   log('✓ DMA Summary: '+rows.length+' DMAs built from '+SR.length+' stores');
-  // Diagnostic: log New York's DMA bucket — PLKs, count, and any stores with mismatched dma name
-  // so we can pinpoint discrepancies between MSF count and DMA Summary count.
+  // Diagnostic: log New York's DMA bucket — store count, unique FRUs, and Northeast vs Non-Trad split
   const _nyGroup=Object.values(dmaMap).find(g=>String(g.dma||'').toLowerCase().includes('new york'));
   if(_nyGroup){
-    const plks=_nyGroup.stores.map(s=>s.plk).sort((a,b)=>a-b);
-    const mismatched=_nyGroup.stores.filter(s=>!s.dma||String(s.dma).toLowerCase()!=='new york');
-    log('[DMA diag] New York: '+plks.length+' stores, dma_id='+_nyGroup.dma_id+', dma name="'+_nyGroup.dma+'"');
-    log('[DMA diag] New York PLKs (sorted): '+JSON.stringify(plks));
-    if(mismatched.length>0){
-      log('[DMA diag] New York: '+mismatched.length+' stores with non-matching dma name (in NYC bucket by dma_id but dma field is different):');
-      mismatched.forEach(s=>log('  PLK '+s.plk+' | dma="'+(s.dma||'')+'" | dma_id='+s.dma_id+' | div='+(s.div||'')));
-    }
+    const stores=_nyGroup.stores;
+    const fruSet=new Set(stores.map(s=>s.fru).filter(Boolean));
+    const noFru=stores.filter(s=>!s.fru);
+    const nonTrad=stores.filter(s=>s.div==='Non-Trad');
+    const northeast=stores.filter(s=>s.div==='Northeast');
+    const otherDiv=stores.filter(s=>s.div&&s.div!=='Non-Trad'&&s.div!=='Northeast');
+    log('[DMA diag] New York: '+stores.length+' stores | dma_id='+_nyGroup.dma_id+' | dma="'+_nyGroup.dma+'"');
+    log('[DMA diag] New York divisions: Northeast='+northeast.length+', Non-Trad='+nonTrad.length+(otherDiv.length>0?', Other='+otherDiv.length:''));
+    log('[DMA diag] New York unique FRUs: '+fruSet.size+(noFru.length>0?' ('+noFru.length+' stores have no FRU: '+noFru.map(s=>s.plk).join(',')+')':''));
+    log('[DMA diag] New York FRU list: '+JSON.stringify([...fruSet].sort()));
   }
 }
 
