@@ -490,8 +490,8 @@ const FZ_SRC={
   'ARS Index':                   'This FRU\'s average Annualized ARS divided by the system-wide average Annualized ARS across all stores, multiplied by 100. A score of 100 equals the system average; above 100 means above average performance.',
   'Annualized EBITDA':           'Average Annualized EBITDA per store in this Franchise Reporting Unit, indexed from the Master Store File tab Annualized EBITDA column. Derived from the P&L Crosstab input (USD).',
   'Annualized EBITDA %':         'Average Annualized EBITDA % per store in this Franchise Reporting Unit, indexed from the Master Store File tab Annualized EBITDA % column (AVERAGEIF by FRU). Simple null-excluding average of each store\'s Annualized EBITDA %.',
-  'YTD SSS':                     'Average Year-to-Date Same-Store Sales growth for this Franchise Reporting Unit, indexed from the Master Store File tab YTD SSS column (AVERAGEIF by FRU). Simple null-excluding average of each store\'s YTD SSS.',
-  'YTD SST':                     'Average Year-to-Date Same-Store Traffic growth for this Franchise Reporting Unit, indexed from the Master Store File tab YTD SST column (AVERAGEIF by FRU). Simple null-excluding average of each store\'s YTD SST.',
+  'YTD SSS':                     'Year-to-Date Same-Store Sales growth for this Franchise Reporting Unit. Computed exactly per the backend formula: SUMIF(FRU, OneStream CY comp sales col CR) / SUMIF(FRU, OneStream PY comp sales col CS) − 1. Sales-weighted by construction.',
+  'YTD SST':                     'Year-to-Date Same-Store Traffic growth for this Franchise Reporting Unit. Computed exactly per the backend formula: SUMIF(FRU, OneStream CY comp traffic col CW) / SUMIF(FRU, OneStream PY comp traffic col CX) − 1. Traffic-weighted by construction.',
   'YTD Avg. Traffic':            'Average Year-to-Date ticket (transaction) count per store for this Franchise Reporting Unit. Calculated as the total YTD ticket count from the Master Store File tab divided by the total number of stores (including stores with no traffic data on file).',
   '2025 R2 FSS':                 'Average Franchisee Success Series (FSS) star rating for 2025 Round 2 across all stores in this Franchise Reporting Unit, indexed from the Master Store File tab 2025 R2 FSS column (Operations input).',
   '2025 R3 FSS':                 'Average Franchisee Success Series (FSS) star rating for 2025 Round 3 across all stores in this Franchise Reporting Unit, indexed from the Master Store File tab 2025 R3 FSS column (Operations input).',
@@ -511,8 +511,8 @@ const DMA_SRC={
   'ARS Index':                'This DMA\'s average Annualized ARS divided by the system-wide average Annualized ARS across all stores, multiplied by 100. A score of 100 equals the system average; above 100 means this DMA outperforms the chain average.',
   'Annualized EBITDA':        'Average Annualized EBITDA per store in this DMA, indexed from the Master Store File tab Annualized EBITDA column. Derived from the P&L Crosstab input (USD).',
   'Annualized EBITDA %':      'Average Annualized EBITDA % per store in this DMA, indexed from the Master Store File tab Annualized EBITDA % column (AVERAGEIF by DMA). Simple null-excluding average of each store\'s Annualized EBITDA %.',
-  'SSS YTD':                  'Average Year-to-Date Same-Store Sales growth for this DMA, indexed from the Master Store File tab YTD SSS column (AVERAGEIF by DMA). Simple null-excluding average of each store\'s YTD SSS.',
-  'SST YTD':                  'Average Year-to-Date Same-Store Traffic growth for this DMA, indexed from the Master Store File tab YTD SST column (AVERAGEIF by DMA). Simple null-excluding average of each store\'s YTD SST.',
+  'SSS YTD':                  'Year-to-Date Same-Store Sales growth for this DMA. Computed exactly per the backend formula: SUMIF(DMA, OneStream CY comp sales col CR) / SUMIF(DMA, OneStream PY comp sales col CS) − 1. Sales-weighted by construction.',
+  'SST YTD':                  'Year-to-Date Same-Store Traffic growth for this DMA. Computed exactly per the backend formula: SUMIF(DMA, OneStream CY comp traffic col CW) / SUMIF(DMA, OneStream PY comp traffic col CX) − 1. Traffic-weighted by construction.',
   'YTD Avg. Traffic':         'Average Year-to-Date ticket (transaction) count per store in this DMA. Total YTD tickets from the Master Store File tab divided by total store count (including stores with no traffic data on file).',
   'Latest REV':               'Average Restaurant Excellence Visit (REV) score for stores in this DMA in the current round, indexed from the Master Store File tab REV column (Operations input).',
   'Total RTD B3 Tickets':     'Sum of all B3 tickets (drive-thru orders completed within 3 minutes) across every store in this DMA during the current FSS round, from the Master Store File tab Operations columns.',
@@ -3180,10 +3180,19 @@ async function parseOneStream(file){
                 const idx=SALES_MONTHS.indexOf(lbl);
                 if(idx>=0) s.monthly_sales[idx]=parsed;
               });
+              // Raw YTD comparable sales/traffic — used by FZ Summary SSS/SST formula:
+              //   FZ SSS = SUMIF(FRU, col CR) / SUMIF(FRU, col CS) − 1
+              //   FZ SST = SUMIF(FRU, col CW) / SUMIF(FRU, col CX) − 1
+              // Col CR (95) = CY YTD comparable sales | CS (96) = PY YTD comparable sales
+              // Col CW (100) = CY YTD comparable traffic | CX (101) = PY YTD comparable traffic
+              s.sss_cy=parseNum(row[95]);
+              s.sss_py=parseNum(row[96]);
+              s.sst_cy=parseNum(row[100]);
+              s.sst_py=parseNum(row[101]);
               nSales++;
             }
           }
-          log('  OneStream sheet: '+nSales+' stores updated (monthly sales)');
+          log('  OneStream sheet: '+nSales+' stores updated (monthly sales + raw CY/PY comp)');
         }
 
         // ── 2. SSS&SST sheet → sss, sst, sss_mo, sst_mo, tickets_mo, tickets
@@ -3505,12 +3514,18 @@ function buildFR(){
     // M: Annualized EBITDA % — AVERAGEIF(MSF!$C:$C, $B6, MSF!ann_ebitda_pct col)
     // Simple null-excluding average of each store's ann_ebitda_pct, matching AVERAGEIF exactly.
     const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
-    // N: YTD SSS — AVERAGEIF(MSF!$C:$C, $B6, MSF YTD SSS col)
-    // Simple null-excluding average of each store's SSS, matching the MSF column AVERAGEIF.
-    const avgSSS=avg(ss.map(s=>s.sss));
-    // O: YTD SST — AVERAGEIF(MSF!$C:$C, $B6, MSF YTD SST col)
-    // Simple null-excluding average of each store's SST, matching the MSF column AVERAGEIF.
-    const avgSST=avg(ss.map(s=>s.sst));
+    // N: YTD SSS — backend formula:
+    //   =SUMIF(OneStream!B, FRU, OneStream!CR) / SUMIF(OneStream!B, FRU, OneStream!CS) − 1
+    //   where CR = CY YTD comparable sales, CS = PY YTD comparable sales (per-store raw).
+    let sssCy=0,sssPy=0;
+    ss.forEach(s=>{ if(s.sss_cy!=null) sssCy+=s.sss_cy; if(s.sss_py!=null) sssPy+=s.sss_py; });
+    const avgSSS=sssPy>0?(sssCy/sssPy)-1:null;
+    // O: YTD SST — same approach for traffic:
+    //   =SUMIF(OneStream!B, FRU, OneStream!CW) / SUMIF(OneStream!B, FRU, OneStream!CX) − 1
+    //   where CW = CY YTD comparable traffic, CX = PY YTD comparable traffic.
+    let sstCy=0,sstPy=0;
+    ss.forEach(s=>{ if(s.sst_cy!=null) sstCy+=s.sst_cy; if(s.sst_py!=null) sstPy+=s.sst_py; });
+    const avgSST=sstPy>0?(sstCy/sstPy)-1:null;
     // P: YTD Avg. Traffic — SUMIF(MSF!$C:$C, $B6, MSF!$BF:$BF) / F6
     //   col BF = YTD Avg. Tickets (s.tickets), NOT Monthly Total Tickets (s.tickets_mo)
     //   F6 = total store count for this FRU (n)
@@ -3592,11 +3607,16 @@ function buildDR(){
     // K: Annualized EBITDA % — AVERAGEIF(MSF!$I:$I, $B6, MSF!ann_ebitda_pct col)
     // Simple null-excluding average of each store's ann_ebitda_pct, matching AVERAGEIF exactly.
     const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
-    // L: SSS YTD — OneStream: SUMIF(DMA ID col C, $B6, CY sales) / SUMIF(..., PY sales) − 1
-    //    Approx: avg(s.sss) per store (exact needs raw OS CY/PY sales per store)
-    const avgSSS=avg(ss.map(s=>s.sss));
-    // M: SST YTD — same approach
-    const avgSST=avg(ss.map(s=>s.sst));
+    // L: SSS YTD — exact backend formula using raw CY/PY comparable sales per store:
+    //   SUMIF(DMA, CY comp sales col CR) / SUMIF(DMA, PY comp sales col CS) − 1
+    let sssCy=0,sssPy=0;
+    ss.forEach(s=>{ if(s.sss_cy!=null) sssCy+=s.sss_cy; if(s.sss_py!=null) sssPy+=s.sss_py; });
+    const avgSSS=sssPy>0?(sssCy/sssPy)-1:null;
+    // M: SST YTD — same approach using raw CY/PY comparable traffic per store:
+    //   SUMIF(DMA, CY comp traffic col CW) / SUMIF(DMA, PY comp traffic col CX) − 1
+    let sstCy=0,sstPy=0;
+    ss.forEach(s=>{ if(s.sst_cy!=null) sstCy+=s.sst_cy; if(s.sst_py!=null) sstPy+=s.sst_py; });
+    const avgSST=sstPy>0?(sstCy/sstPy)-1:null;
     // N: YTD Avg. Traffic — SUMIF(MSF!$I:$I, $B6, MSF!$BF:$BF) / E6
     //   col BF = YTD Avg. Tickets (s.tickets), NOT Monthly Total Tickets (s.tickets_mo)
     //   E6 = total store count for this DMA (n)
@@ -4287,8 +4307,9 @@ function exportExcel(){
 // that re-fetch on every page load — no need to persist them here.
 const PERSIST_KEYS=[
   'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',   // P&L (uploaded)
-  'monthly_sales','ms_prev',                                // OneStream sales (uploaded)
-  'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',             // OneStream SSS/SST/Traffic (uploaded)
+  'monthly_sales','ms_prev',                                       // OneStream sales (uploaded)
+  'sss_cy','sss_py','sst_cy','sst_py',                             // OneStream raw CY/PY comp (uploaded) — for exact FZ SUMIF/SUMIF
+  'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',            // OneStream SSS/SST/Traffic (uploaded) — used for MSF per-store display
 ];
 const LS_KEY='plk_sr_delta_v2';
 
