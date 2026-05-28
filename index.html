@@ -3655,6 +3655,17 @@ function buildDR(){
     //   E6 = total store count for this DMA (n)
     const tixSum=ss.reduce((a,s)=>a+(s.tickets!=null?s.tickets:0),0);
     const avgTix=n>0?tixSum/n:null;
+    // Diagnostic for New York: log all the sums so we can compare against manual file SUMIF results
+    if(String(g.dma||'').toLowerCase().includes('new york')){
+      const tixCount=ss.filter(s=>s.tickets!=null).length;
+      const tixNonZero=ss.filter(s=>s.tickets!=null&&s.tickets>0).length;
+      log('[NYC sums] n='+n+' | tickets_sum='+Math.round(tixSum)+' | avgTix='+(avgTix?avgTix.toFixed(1):'null')+' | stores w/ non-null tickets='+tixCount+' | non-zero tickets='+tixNonZero);
+      log('[NYC sums] sss_cy_sum='+Math.round(sssCy)+' | sss_py_sum='+Math.round(sssPy)+' | SSS='+(sssPy>0?((sssCy/sssPy-1)*100).toFixed(2)+'%':'null'));
+      log('[NYC sums] sst_cy_sum='+Math.round(sstCy)+' | sst_py_sum='+Math.round(sstPy)+' | SST='+(sstPy>0?((sstCy/sstPy-1)*100).toFixed(2)+'%':'null'));
+      // List top 5 stores by tickets to spot-check
+      const top=ss.filter(s=>s.tickets!=null).sort((a,b)=>(b.tickets||0)-(a.tickets||0)).slice(0,5);
+      log('[NYC sums] Top 5 by tickets: '+top.map(s=>s.plk+'='+Math.round(s.tickets)).join(', '));
+    }
     // O: Latest REV — AVERAGEIFS(MSF col BX, DMA ID=$B6)
     const avgRev=avg(ss.map(s=>s.rev));
     // P: Total RTD B3 Tickets — SUMIF(MSF!$I, B6, MSF col BT)
