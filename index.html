@@ -3659,6 +3659,19 @@ function buildDR(){
   rows.sort((a,b)=>(b[4]||0)-(a[4]||0));
   DR.splice(0,DR.length,...rows);
   log('✓ DMA Summary: '+rows.length+' DMAs built from '+SR.length+' stores');
+  // Diagnostic: log New York's DMA bucket — PLKs, count, and any stores with mismatched dma name
+  // so we can pinpoint discrepancies between MSF count and DMA Summary count.
+  const _nyGroup=Object.values(dmaMap).find(g=>String(g.dma||'').toLowerCase().includes('new york'));
+  if(_nyGroup){
+    const plks=_nyGroup.stores.map(s=>s.plk).sort((a,b)=>a-b);
+    const mismatched=_nyGroup.stores.filter(s=>!s.dma||String(s.dma).toLowerCase()!=='new york');
+    log('[DMA diag] New York: '+plks.length+' stores, dma_id='+_nyGroup.dma_id+', dma name="'+_nyGroup.dma+'"');
+    log('[DMA diag] New York PLKs (sorted): '+JSON.stringify(plks));
+    if(mismatched.length>0){
+      log('[DMA diag] New York: '+mismatched.length+' stores with non-matching dma name (in NYC bucket by dma_id but dma field is different):');
+      mismatched.forEach(s=>log('  PLK '+s.plk+' | dma="'+(s.dma||'')+'" | dma_id='+s.dma_id+' | div='+(s.div||'')));
+    }
+  }
 }
 
 function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
