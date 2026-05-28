@@ -1243,7 +1243,17 @@ function handleUpload(id, inp){
           {key:'pop',       terms:['effective pop','effective population','population']},
         ]);
         if(cm.plk==null){ log('[MP scan] Rest # column not found'); return; }
-        // Per-store subcluster + pop
+        // Pass 1: Build DMA-code → Effective Population map (col I=8, col J=9 per backend)
+        const dmaPopMap={};
+        for(let r=hr+1;r<aoa.length;r++){
+          const row=aoa[r]; if(!row) continue;
+          const dmaCode=parseInt(row[8]);
+          const pop=parseNum(row[9]);
+          if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null){
+            dmaPopMap[dmaCode]=pop;
+          }
+        }
+        // Pass 2: Per-store subcluster, plus DMA-code-matched population
         const mpMap={};
         for(let r=hr+1;r<aoa.length;r++){
           const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
@@ -1251,10 +1261,9 @@ function handleUpload(id, inp){
           if(mpMap[plk]) continue;
           const s={plk};
           if(cm.subcluster!=null&&row[cm.subcluster]!=null){ const v=String(row[cm.subcluster]).trim(),vL=v.toLowerCase(); if(v&&vL!=='na'&&vL!=='n/a'&&vL!=='-'&&vL!=='none'&&vL!=='null') s.subcluster=v; }
-          // Population: col J (index 9) per backend; fall back to header-based lookup
-          { const popJ=parseNum(row[9]); const popHdr=cm.pop!=null?parseNum(row[cm.pop]):null;
-            const pop=(popJ!=null&&popJ>0)?popJ:(popHdr!=null&&popHdr>0?popHdr:null);
-            if(pop!=null) s.mp_pop=pop; }
+          // Apply DMA-code-matched population if row has a DMA code
+          const rowDmaCode=parseInt(row[8]);
+          if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null) s.mp_pop=dmaPopMap[rowDmaCode];
           mpMap[plk]=s;
         }
         const mpSnap=Object.values(mpMap).map(s=>{ const o={}; MP_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
@@ -2788,8 +2797,21 @@ async function parseMP(file){
   if(cm.subcluster==null){log('⚠ Market Planning: "Subcluster" column not found'); return;}
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
 
-  // Per-store subcluster + pop
-  let nSub=0, nPop=0;
+  // Pass 1: Build DMA-code → Effective Population map.
+  // Per backend spec: col I (index 8) = DMA Code, col J (index 9) = Effective Population.
+  // This is a DMA-level lookup, so any row that has both is captured.
+  const dmaPopMap={};
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row) continue;
+    const dmaCode=parseInt(row[8]);
+    const pop=parseNum(row[9]);
+    if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null){
+      dmaPopMap[dmaCode]=pop;
+    }
+  }
+
+  // Pass 2: Per-store subcluster + apply DMA pop based on each store's dma_id matching col I.
+  let nSub=0, nPop=0, nDmaPop=0;
   for(let r=hr+1;r<aoa.length;r++){
     const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
     const plk=parseInt(row[cm.plk]); if(isNaN(plk)||plk<=0) continue;
@@ -2797,21 +2819,22 @@ async function parseMP(file){
     if(row[cm.subcluster]!=null){
       const _sc=String(row[cm.subcluster]).trim();
       const _scL=_sc.toLowerCase();
-      // Treat placeholder values as blank — they render as "-" like any other null field
       if(_sc!==''&&_scL!=='na'&&_scL!=='n/a'&&_scL!=='-'&&_scL!=='none'&&_scL!=='null'){
         s.subcluster=_sc; nSub++;
       } else {
-        s.subcluster=null; // explicitly clear in case a prior snap had a stale value
+        s.subcluster=null;
       }
     }
-    // Population: per backend Market Planning file, col J (index 9) holds the population value.
-    // Fall back to header-based lookup if col J doesn't contain a positive numeric.
-    const popJ=parseNum(row[9]);
-    const popHdr=cm.pop!=null?parseNum(row[cm.pop]):null;
-    const pop=(popJ!=null&&popJ>0)?popJ:(popHdr!=null&&popHdr>0?popHdr:null);
-    if(pop!=null){ s.mp_pop=pop; nPop++; }
+    // Population is now sourced from the DMA-code map (col I → col J).
+    // Apply by matching store's dma_id to the row's DMA code (col I, index 8).
+    const rowDmaCode=parseInt(row[8]);
+    if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null){ s.mp_pop=dmaPopMap[rowDmaCode]; nPop++; }
   }
-  log('✓ Market Planning: '+nSub+' stores with sub-cluster | '+nPop+' stores with population data');
+  // Also apply to any SR store whose dma_id is in the map but whose row wasn't iterated
+  SR.forEach(s=>{
+    if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null&&s.mp_pop==null){ s.mp_pop=dmaPopMap[s.dma_id]; nDmaPop++; }
+  });
+  log('✓ Market Planning: '+nSub+' stores w/ sub-cluster | '+nPop+' stores w/ pop from MP row | +'+nDmaPop+' more from DMA-code map | '+Object.keys(dmaPopMap).length+' unique DMA codes mapped');
 }
 
 // ─── FX Rates (XLSX) ───────────────────────────────
