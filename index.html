@@ -3153,7 +3153,6 @@ async function parseOneStream(file){
             if(tr) log('  First data row monthly cols (startCol='+tr.startCol+'): '+JSON.stringify(_dbgRow.slice(tr.startCol,tr.startCol+6)));
           }
           if(tr&&dr>=0){
-            const osPLKs=new Set(); // track stores found in this OneStream file
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row||row[0]==null) continue;
               const plk=parseInt(row[0]); if(isNaN(plk)||!srMap[plk]) continue;
@@ -3175,14 +3174,8 @@ async function parseOneStream(file){
                 const idx=SALES_MONTHS.indexOf(lbl);
                 if(idx>=0) s.monthly_sales[idx]=parsed;
               });
-              osPLKs.add(plk);
               nSales++;
             }
-            // Stores in SR but NOT in this OneStream file: explicitly null out monthly_sales
-            // so stale prior-period data (from SR_DEFAULT or old delta) can't distort averages.
-            // Matches Excel backend behavior where missing stores have blank ARS column.
-            SR.forEach(s=>{ if(!osPLKs.has(s.plk)){ s.monthly_sales=null; s.ms_prev=null; } });
-            window._oneStreamParsed=true; // flag: this Generate included OneStream data
           }
           log('  OneStream sheet: '+nSales+' stores updated (monthly sales)');
         }
@@ -3215,8 +3208,6 @@ async function parseOneStream(file){
             // Helper: treat 0 as null (OneStream "Display no Data as Zero")
             const fp=v=>{const n=parsePct(v);return (n===0||n===null)?null:n;};
             const fn=v=>{const n=parseNum(v);return (n===0||n===null)?null:n;};
-            const sstPLKs=new Set(); // track stores found in SSS&SST sheet
-            const ticketPLKs=new Set(); // track stores found via col A (YTD Avg Tickets)
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row) continue;
               // SSS / SST / monthly tickets — match on col D PLK#
@@ -3229,7 +3220,6 @@ async function parseOneStream(file){
                   s.sst_mo    =fp(row[7]);   // col H: Monthly SST
                   s.sst       =fp(row[8]);   // col I: YTD SST
                   s.tickets_mo=fn(row[9]);   // col J: Monthly Total Tickets
-                  sstPLKs.add(plk);
                   nSST++;
                 }
               }
@@ -3238,24 +3228,10 @@ async function parseOneStream(file){
                 const plk=parseInt(row[0]);
                 if(!isNaN(plk)&&plk>0&&srMap[plk]){
                   const v=fn(row[24]);       // col Y: YTD Avg. Tickets
-                  // Register PLK regardless of whether col Y has a value — the clearing loop
-                  // below must not wipe tickets for stores that appear in this sheet, even if
-                  // col Y happens to be 0/null for this period.
-                  ticketPLKs.add(plk);
                   if(v!=null) srMap[plk].tickets=v;
                 }
               }
             }
-            // Stores in SR but NOT in this SSS&SST sheet: explicitly null out SSS/SST/traffic
-            // so stale prior-period data can't distort FZ Summary averages on the next reload.
-            SR.forEach(s=>{
-              if(!sstPLKs.has(s.plk)){
-                s.sss=null; s.sss_mo=null;
-                s.sst=null; s.sst_mo=null;
-                s.tickets_mo=null;
-              }
-              if(!ticketPLKs.has(s.plk)) s.tickets=null;
-            });
           }
           // Diagnostic: show first matched store values
           const _dbgS=SR.find(s=>s.sss!=null||s.sst!=null||s.tickets!=null);
@@ -3421,31 +3397,15 @@ function calculateFields(){
     }
 
     // TTM ARS from OneStream monthly sales array.
-    // When monthly_sales is null (store not in this period's OneStream file),
-    // clear ARS fields — matches Excel blank behavior, prevents stale values in averages.
     if(s.monthly_sales&&s.monthly_sales.length>0){
       const vals=s.monthly_sales.slice(0,SALES_MONTHS.length).filter(v=>v!=null&&v!==0);
       s.store_months_sales=vals.length;
       s.ttm_ars=vals.length>0?vals.reduce((a,b)=>a+b,0):null;
       s.ann_ars =(s.ttm_ars!=null&&s.store_months_sales>0)
                  ?s.ttm_ars/s.store_months_sales*12:null;
-    } else {
-      // No monthly_sales array — clear ARS fields so stores without current-period
-      // OneStream data show blank in MSF and are excluded from FZ Summary averages.
-      // Matches Excel backend behavior: stores not in the OneStream file have blank ARS.
-      s.store_months_sales=0;
-      s.ttm_ars=null;
-      s.ann_ars=null;
     }
 
-    if(!s.ebitda_monthly||!s.ebitda_monthly.length){
-      // No EBITDA data — clear all EBITDA fields so stores without current-period P&L data
-      // show blank in MSF and are excluded from FZ Summary averages. Mirrors ARS clearing above.
-      s.store_months_ebitda=0;
-      s.ttm_ebitda=null;
-      s.ann_ebitda=null;
-      s.ann_ebitda_pct=null;
-    }
+    if(!s.ebitda_monthly||!s.ebitda_monthly.length) s.store_months_ebitda=0;
 
     // Ownership / concentration metrics
     s.rest_owned       =s.fru?fruCount[s.fru]||1:null;
@@ -4464,14 +4424,7 @@ async function saveState(){
     const d={};
     PERSIST_KEYS.forEach(k=>{
       const v=s[k];
-      // For fields explicitly cleared by a parser in this Generate, save the null
-      // so the delta can override stale SR_DEFAULT values on the next page reload.
-      const saveNull=(
-        (k==='monthly_sales'||k==='ms_prev')&&window._oneStreamParsed ||
-        (k==='sss'||k==='sst'||k==='sss_mo'||k==='sst_mo'||k==='tickets_mo'||k==='tickets')&&window._oneStreamParsed
-      );
-      if(saveNull) d[k]=v;
-      else if(v!=null) d[k]=v;
+      if(v!=null) d[k]=v;
     });
     if(Object.keys(d).length>0){ delta[s.plk]=d; nStores++; }
   });
