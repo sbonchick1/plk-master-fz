@@ -3636,11 +3636,11 @@ function buildDR(){
   const rows=[];
   Object.values(dmaMap).forEach(g=>{
     const ss=g.stores, n=ss.length;
-    // D: Division — backend formula:
-    //   =INDEX(MSF!$G:$G, MATCH(1, (B6=MSF!$I:$I) * (MSF!$G:$G<>"Non-Trad"), 0))
-    // Returns the division of the FIRST store in this DMA that has a non-"Non-Trad" division.
-    const divStore=ss.find(s=>s.div&&s.div!=='Non-Trad');
-    const div=divStore?divStore.div:'';
+    // D: Division — show "Multiple" when DMA spans more than one non-Non-Trad division.
+    // The backend formula (INDEX/MATCH on G:G with G<>"Non-Trad") only returns one division
+    // because Excel can't return multiple, but the business intent is to flag mixed DMAs.
+    // DMAs like New Orleans span PLK Company + Central; surfacing "Multiple" is more useful.
+    const div=g.divSet.size>1?'Multiple':[...g.divSet][0]||'';
     // F: # of Franchisees — COUNT(UNIQUE(FILTER(MSF FRU col D, DMA ID=$B6)))
     const frus=new Set(ss.map(s=>s.fru).filter(Boolean));
     // G: 2026 Openings — COUNTIFS(orig_open in 2026, DMA ID=$B6)
