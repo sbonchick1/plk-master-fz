@@ -3503,6 +3503,113 @@ function calculateFields(){
   }
 
   log('✓ Calculated fields applied to '+SR.length+' stores (DDL, TTM, ARS, ownership)');
+  // Sync CR (CA tab) from SR so Canadian store data reflects current uploads,
+  // not the stale CR_DEFAULT baked into the HTML.
+  syncCRFromSR();
+}
+
+// ─── Sync CA tab data from live SR ───────────────────
+// CR_DEFAULT is baked into the HTML at server start and never updates on file upload.
+// SR gets updated by every parser (alignment, MDS, MP, P&L, OneStream, etc.). This
+// function pushes the latest SR field values back into the corresponding CR row for
+// each Canadian store, matched by PLK#. Called from calculateFields() so CR refreshes
+// after every Generate as well as on page load.
+//
+// CR row layout: row[0]=null pandas-index, row[1]=CA_COLS[0], …, row[31]=CA_COLS[30],
+//   row[32]=extra mystery column (skipped), row[33]=CA_COLS[31], …
+function syncCRFromSR(){
+  if(!Array.isArray(CR)||CR.length===0||!Array.isArray(SR)||SR.length===0) return;
+  const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
+  // helper: row index for a given CA_COLS index (handles +1 prefix and +2 jump past row[32])
+  const ri=ci=>ci<31?ci+1:ci+2;
+  let n=0;
+  CR.forEach(row=>{
+    const plk=parseInt(row[1]); if(isNaN(plk)) return;
+    const s=srMap[plk]; if(!s) return;
+    n++;
+    // Restaurant Information (CA_COLS 1-13)
+    if(s.fru!=null) row[ri(1)]=s.fru;
+    if(s.op!=null) row[ri(2)]=s.op;
+    if(s.fg!=null) row[ri(3)]=s.fg;
+    if(s.status!=null) row[ri(4)]=s.status;
+    if(s.div!=null) row[ri(5)]=s.div;
+    if(s.dma!=null) row[ri(6)]=s.dma;
+    if(s.dma_id!=null) row[ri(7)]=s.dma_id;
+    if(s.subcluster!=null) row[ri(8)]=s.subcluster;
+    if(s.urb!=null) row[ri(9)]=s.urb;
+    if(s.state!=null) row[ri(10)]=s.state;
+    if(s.city!=null) row[ri(11)]=s.city;
+    if(s.postal!=null) row[ri(12)]=s.postal;
+    if(s.address!=null) row[ri(13)]=s.address;
+    // FY Annual Sales (14-18)
+    if(s.fy2021!=null) row[ri(14)]=s.fy2021;
+    if(s.fy2022!=null) row[ri(15)]=s.fy2022;
+    if(s.fy2023!=null) row[ri(16)]=s.fy2023;
+    if(s.fy2024!=null) row[ri(17)]=s.fy2024;
+    if(s.fy2025!=null) row[ri(18)]=s.fy2025;
+    // Monthly sales (19-30)
+    if(Array.isArray(s.monthly_sales)){
+      for(let i=0;i<SALES_MONTHS.length;i++){ if(s.monthly_sales[i]!=null) row[ri(19+i)]=s.monthly_sales[i]; }
+    }
+    // Sales summary (31-33)
+    if(s.ttm_ars!=null) row[ri(31)]=s.ttm_ars;
+    if(s.ann_ars!=null) row[ri(32)]=s.ann_ars;
+    if(s.store_months_sales!=null) row[ri(33)]=s.store_months_sales;
+    // Monthly EBITDA (34-45)
+    if(Array.isArray(s.ebitda_monthly)){
+      for(let i=0;i<EBITDA_MONTHS.length;i++){ if(s.ebitda_monthly[i]!=null) row[ri(34+i)]=s.ebitda_monthly[i]; }
+    }
+    // EBITDA summary (46-51)
+    if(s.ttm_ebitda!=null) row[ri(46)]=s.ttm_ebitda;
+    if(s.ann_ebitda!=null) row[ri(47)]=s.ann_ebitda;
+    if(s.ann_ebitda_pct!=null) row[ri(48)]=s.ann_ebitda_pct;
+    if(s.cur_rent!=null) row[ri(49)]=s.cur_rent;
+    if(s.cur_rent_pct!=null) row[ri(50)]=s.cur_rent_pct;
+    if(s.store_months_ebitda!=null) row[ri(51)]=s.store_months_ebitda;
+    // Sales/Traffic Comps (52-57)
+    if(s.sss!=null) row[ri(52)]=s.sss;
+    if(s.sst!=null) row[ri(53)]=s.sst;
+    if(s.tickets!=null) row[ri(54)]=s.tickets;
+    if(s.sss_mo!=null) row[ri(55)]=s.sss_mo;
+    if(s.sst_mo!=null) row[ri(56)]=s.sst_mo;
+    if(s.tickets_mo!=null) row[ri(57)]=s.tickets_mo;
+    // Operational Metrics (58-67)
+    if(s.fss_r2!=null) row[ri(58)]=s.fss_r2;
+    if(s.fss_r3!=null) row[ri(59)]=s.fss_r3;
+    if(s.fss_rtd!=null) row[ri(60)]=s.fss_rtd;
+    if(s.b3!=null) row[ri(63)]=s.b3;
+    if(s.total_tickets!=null) row[ri(64)]=s.total_tickets;
+    if(s.car_count!=null) row[ri(65)]=s.car_count;
+    if(s.wait_time!=null) row[ri(66)]=s.wait_time;
+    if(s.rev!=null) row[ri(67)]=s.rev;
+    // RBI Alignment (68-71)
+    if(s.ddl!=null) row[ri(68)]=s.ddl;
+    if(s.op_mgr!=null) row[ri(69)]=s.op_mgr;
+    if(s.fbp!=null) row[ri(70)]=s.fbp;
+    if(s.gm!=null) row[ri(71)]=s.gm;
+    // Franchisee Landscape (72-81)
+    if(s.rvp!=null) row[ri(72)]=s.rvp;
+    if(s.strategy_owner!=null) row[ri(73)]=s.strategy_owner;
+    if(s.orig_open!=null) row[ri(74)]=s.orig_open;
+    if(s.fa_exp!=null) row[ri(75)]=s.fa_exp;
+    if(s.f2f!=null) row[ri(76)]=s.f2f;
+    if(s.fg_num!=null) row[ri(77)]=s.fg_num;
+    if(s.rest_owned!=null) row[ri(78)]=s.rest_owned;
+    if(s.total_rest_dma!=null) row[ri(79)]=s.total_rest_dma;
+    if(s.fz_rest_dma!=null) row[ri(80)]=s.fz_rest_dma;
+    if(s.pct_ownership_dma!=null) row[ri(81)]=s.pct_ownership_dma;
+    // Restaurant Attributes (82-90)
+    if(s.drive_thru_type!=null) row[ri(82)]=s.drive_thru_type;
+    if(s.arch_type!=null) row[ri(83)]=s.arch_type;
+    if(s.loc_type!=null) row[ri(84)]=s.loc_type;
+    if(s.deal_type!=null) row[ri(85)]=s.deal_type;
+    if(s.ext_image!=null) row[ri(86)]=s.ext_image;
+    if(s.lat!=null) row[ri(87)]=s.lat;
+    if(s.lng!=null) row[ri(88)]=s.lng;
+    if(s.royalty!=null) row[ri(89)]=s.royalty;
+    if(s.adfund!=null) row[ri(90)]=s.adfund;
+  });
+  log('✓ CA Master Store File: '+n+' Canadian stores synced from SR (fresh data, no stale columns)');
 }
 
 // ─── Build FZ Summary rows from live SR data ───────
