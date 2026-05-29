@@ -181,6 +181,7 @@ tr:nth-child(even):hover td{background:#f0f3fa}
     <div class="ss-dot"></div>
     <div class="ss-lbl">Renovations — Smartsheet</div>
     <div class="ss-st" id="ss-st">Connecting…</div>
+    <button class="ss-refresh" id="ss-refresh" onclick="loadSmartsheet()" title="Force refresh from Smartsheet" style="display:none">↻ Refresh</button>
   </div>
   <div class="ss-bar" id="sf-bar">
     <div class="ss-dot"></div>
@@ -1533,7 +1534,10 @@ function markCardDone(id, fname){
 const SS_TOKEN='Qcv9OFzbweKqbamkePSG2WpggSbTkEmASUgh1', SS_ID='3928541238349700';
 async function loadSmartsheet(){
   const bar=document.getElementById('ss-bar'), st=document.getElementById('ss-st');
+  const btn=document.getElementById('ss-refresh');
+  bar.className='ss-bar loading';
   st.textContent='Connecting…';
+  if(btn) btn.style.display='none';
   try{
     const r=await fetch('/api/renovations',
       {});
@@ -1551,6 +1555,7 @@ async function loadSmartsheet(){
     const n=Object.keys(window._renos).length;
     st.innerHTML='&#10003; Connected — '+n+' renovation records';
     bar.className='ss-bar ok';
+    if(btn) btn.style.display='';
     SR.forEach(s=>{const rv=window._renos[s.plk];if(rv){s.reno_date=rv.date;s.reno_scope=rv.scope;}});
     log('Smartsheet: '+n+' renovation records loaded');
     // Re-render immediately so reno data appears without needing Generate File
@@ -1558,6 +1563,7 @@ async function loadSmartsheet(){
   }catch(e){
     st.textContent='Error: '+e.message;
     bar.className='ss-bar err';
+    if(btn) btn.style.display='';
     log('Smartsheet error: '+e.message);
   }
 }
