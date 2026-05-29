@@ -2844,11 +2844,16 @@ async function parseMP(file){
     const rowDmaCode=parseInt(row[dmaCodeIdx]);
     if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null){ s.mp_pop=dmaPopMap[rowDmaCode]; nPop++; }
   }
-  // Also apply to any SR store whose dma_id is in the map but whose row wasn't iterated
+  // Apply DMA-level population to every SR store whose dma_id is in the map.
+  // Unconditionally overwrite — earlier cached mp_pop values may be stale (from the old
+  // header-based lookup), so we want the fresh DMA-code-matched value to win.
   SR.forEach(s=>{
-    if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null&&s.mp_pop==null){ s.mp_pop=dmaPopMap[s.dma_id]; nDmaPop++; }
+    if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null){
+      if(s.mp_pop!==dmaPopMap[s.dma_id]) nDmaPop++;
+      s.mp_pop=dmaPopMap[s.dma_id];
+    }
   });
-  log('✓ Market Planning: '+nSub+' stores w/ sub-cluster | '+nPop+' stores w/ pop from MP row | +'+nDmaPop+' more from DMA-code map | '+Object.keys(dmaPopMap).length+' unique DMA codes mapped');
+  log('✓ Market Planning: '+nSub+' stores w/ sub-cluster | '+nPop+' stores w/ pop from MP row | '+nDmaPop+' stores updated via DMA-code map | '+Object.keys(dmaPopMap).length+' unique DMA codes mapped');
 }
 
 // ─── FX Rates (XLSX) ───────────────────────────────
