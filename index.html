@@ -1989,26 +1989,30 @@ function buildCAHeader(){
   fixStickyRows3('ca-thead');
   refreshCaFxRow(); // populate rates if already loaded
 }
+// Round an FX rate to 3 decimals to match the manual file's conversion rates
+// (e.g. 1.349, not 1.34916). Used for every CA-tab USD→CAD conversion + display.
+function fx3(v){ return (v==null||isNaN(v))?null:Math.round(v*1000)/1000; }
 // Populate/refresh the FX rates row from window.FX_SALES / FX_EBITDA / FX_ANNUAL
 function refreshCaFxRow(){
   const ann=window.FX_ANNUAL||{};
   const fxS=window.FX_SALES||[];
   const fxE=window.FX_EBITDA||[];
-  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?vals[vals.length-1]:null;})();
+  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?fx3(vals[vals.length-1]):null;})();
   const hasFX=fxS.some(v=>v!=null)||fxE.some(v=>v!=null)||Object.keys(ann).length>0;
-  const fmt4=v=>(v!=null&&!isNaN(v)?Number(v).toFixed(4):'-');
+  // Show rates at 3 decimals (matches the rate precision used in the conversion math)
+  const fmt3=v=>{const r=fx3(v); return r!=null?r.toFixed(3):'-';};
   // Col indices with FX content
   const setFx=(ci,val)=>{ const el=document.getElementById('cafx-'+ci); if(el) el.textContent=val; };
   // Label at Address column (CA_COLS[13])
   setFx(13, hasFX?'FX Rate (USD→CAD)':'FX Rates: not loaded');
   // FY annual rates at CA_COLS[14-18]
-  for(let y=0;y<5;y++) setFx(14+y, fmt4(ann[2021+y]));
+  for(let y=0;y<5;y++) setFx(14+y, fmt3(ann[2021+y]));
   // Monthly sales rates at CA_COLS[19-30]
-  SALES_MONTHS.forEach((_,i)=> setFx(19+i, fmt4(fxS[i])));
+  SALES_MONTHS.forEach((_,i)=> setFx(19+i, fmt3(fxS[i])));
   // Monthly EBITDA rates at CA_COLS[34-45]
-  EBITDA_MONTHS.forEach((_,i)=> setFx(34+i, fmt4(fxE[i])));
+  EBITDA_MONTHS.forEach((_,i)=> setFx(34+i, fmt3(fxE[i])));
   // Rent$ rate at CA_COLS[49]
-  setFx(49, fmt4(lastFx));
+  setFx(49, fmt3(lastFx));
 }
 // Sticky positioning for 3-row thead
 function fixStickyRows3(theadId){
@@ -2923,18 +2927,19 @@ async function parseFX(file){
       // (e.g. FY2023 1.349, not the full-precision 1.34916). The manual multiplies
       // FY USD totals by the 3-decimal rate, so the app must too or CA FY columns
       // come out ~0.01% high.
-      annual[yr]=Math.round(avg*1000)/1000;
+      annual[yr]=fx3(avg);
     }
   }
   window.FX_CADUSD=rates.CADUSD;
-  window.FX_USDCAD=rates.USDCAD; // full history
-  window.FX_ANNUAL=annual;        // {2021:1.25, 2022:1.30, ...}
-  window.FX_SALES  =SALES_MONTHS.map(m=>rates.USDCAD[m]||null);
-  window.FX_EBITDA =EBITDA_MONTHS.map(m=>rates.USDCAD[m]||null);
-  log('✓ FX Rates: CADUSD '+nc+' months · USDCAD '+nu+' months loaded');
-  log('  Annual averages: '+[2021,2022,2023,2024,2025].map(y=>'FY'+y+'='+(annual[y]?annual[y].toFixed(4):'-')).join(' · '));
-  log('  Sales USDCAD:  '+SALES_MONTHS.map((m,i)=>m+'='+(window.FX_SALES[i]!=null?window.FX_SALES[i].toFixed(4):'-')).join(' | '));
-  log('  EBITDA USDCAD: '+EBITDA_MONTHS.map((m,i)=>m+'='+(window.FX_EBITDA[i]!=null?window.FX_EBITDA[i].toFixed(4):'-')).join(' | '));
+  window.FX_USDCAD=rates.USDCAD; // full history (unrounded; lastFx + annual avg derive from it, then round)
+  window.FX_ANNUAL=annual;        // {2021:1.253, 2022:1.302, ...} — already 3-decimal
+  // Monthly USD→CAD rates rounded to 3 decimals so every CA conversion uses 3-decimal rates
+  window.FX_SALES  =SALES_MONTHS.map(m=>fx3(rates.USDCAD[m]));
+  window.FX_EBITDA =EBITDA_MONTHS.map(m=>fx3(rates.USDCAD[m]));
+  log('✓ FX Rates: CADUSD '+nc+' months · USDCAD '+nu+' months loaded (rates rounded to 3 decimals)');
+  log('  Annual averages: '+[2021,2022,2023,2024,2025].map(y=>'FY'+y+'='+(annual[y]?annual[y].toFixed(3):'-')).join(' · '));
+  log('  Sales USDCAD:  '+SALES_MONTHS.map((m,i)=>m+'='+(window.FX_SALES[i]!=null?window.FX_SALES[i].toFixed(3):'-')).join(' | '));
+  log('  EBITDA USDCAD: '+EBITDA_MONTHS.map((m,i)=>m+'='+(window.FX_EBITDA[i]!=null?window.FX_EBITDA[i].toFixed(3):'-')).join(' | '));
   // Persist rates in localStorage so the CA tab header stays populated across page reloads
   try{
     localStorage.setItem('plk_fx',JSON.stringify({
@@ -3806,7 +3811,7 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
   const ann=window.FX_ANNUAL||{};
   const fxS=window.FX_SALES||new Array(SALES_MONTHS.length).fill(null);
   const fxE=window.FX_EBITDA||new Array(EBITDA_MONTHS.length).fill(null);
-  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?vals[vals.length-1]:null;})();
+  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?fx3(vals[vals.length-1]):null;})();
   const W=CA_COLS.length+1; // total row width (1 spacer col + data cols)
 
   // Row 1: empty
@@ -3820,10 +3825,10 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
   //   CA_COLS[49]     = Rent$         → AOA position  50
   const fx=new Array(W).fill('');
   fx[14]='FX Rates (USD→CAD)';
-  for(let y=0;y<5;y++) fx[15+y]=ann[2021+y]||'';       // FY annual avg USDCAD rates
-  for(let i=0;i<SALES_MONTHS.length;i++) fx[20+i]=fxS[i]||'';   // monthly USDCAD sales
-  for(let i=0;i<EBITDA_MONTHS.length;i++) fx[35+i]=fxE[i]||'';  // monthly USDCAD EBITDA
-  if(lastFx) fx[50]=lastFx;                             // Rent$ uses most recent rate
+  for(let y=0;y<5;y++){const rt=fx3(ann[2021+y]); fx[15+y]=rt!=null?rt:'';}       // FY annual avg USDCAD rates (3-decimal)
+  for(let i=0;i<SALES_MONTHS.length;i++){const rt=fx3(fxS[i]); fx[20+i]=rt!=null?rt:'';}   // monthly USDCAD sales (3-decimal)
+  for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fx3(fxE[i]); fx[35+i]=rt!=null?rt:'';}  // monthly USDCAD EBITDA (3-decimal)
+  if(lastFx) fx[50]=lastFx;                             // Rent$ uses most recent rate (already 3-decimal)
   aoa.push(fx);
   // Row 4: section headers — start at col B (index 1)
   const sec=new Array(W).fill('');
@@ -3841,20 +3846,21 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
     const r=row.slice(); // always copy so we don't mutate the live CR array
     if(hasFX){
       const n=v=>(typeof v==='number'&&isFinite(v)?v:null);
-      // Annual sales × FY average USDCAD rate, rounded to 3 decimals to match the
-      // manual file (e.g. FY2023 = 1.349). Round here too in case ann[] was restored
-      // from older localStorage that pre-dates the rounding in parseFX.
-      for(let y=0;y<5;y++){const raw=ann[2021+y];const rt=raw!=null?Math.round(raw*1000)/1000:null;if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
+      // All USD→CAD rates rounded to 3 decimals (fx3) to match the manual file. Rounded
+      // here at point of use too, in case window.FX_* were restored from older localStorage
+      // that pre-dates the rounding in parseFX.
+      // Annual sales × FY average USDCAD rate (e.g. FY2023 = 1.349)
+      for(let y=0;y<5;y++){const rt=fx3(ann[2021+y]);if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
       // Monthly sales × monthly rate; recalc TTM/Ann (at r[33]/r[34])
       let ttmS=0,smS=0;
       for(let i=0;i<SALES_MONTHS.length;i++){
-        const rt=fxS[i]; if(rt&&n(r[20+i])!=null){r[20+i]=r[20+i]*rt;ttmS+=r[20+i];smS++;}
+        const rt=fx3(fxS[i]); if(rt&&n(r[20+i])!=null){r[20+i]=r[20+i]*rt;ttmS+=r[20+i];smS++;}
       }
       if(smS>0){r[33]=ttmS;r[34]=ttmS/smS*12;}
       // Monthly EBITDA × monthly rate; recalc TTM/Ann (at r[48]/r[49])
       let ttmE=0,smE=0;
       for(let i=0;i<EBITDA_MONTHS.length;i++){
-        const rt=fxE[i]; if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}
+        const rt=fx3(fxE[i]); if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}
       }
       if(smE>0){
         const annE=ttmE/smE*12;
