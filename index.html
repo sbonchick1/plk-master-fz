@@ -4393,10 +4393,11 @@ function exportExcel(){
       });
     }
 
-    // Column header row (hdrR) — color each cell
+    // Column header row (hdrR) — color each cell, and force TEXT type/format so month
+    // labels like "Mar-25" are never auto-interpreted by Excel as dates (e.g. "25-Mar").
     cols.forEach((col,i)=>{
       const ref=XLSX.utils.encode_cell({r:hdrR,c:i+offset});
-      if(ws[ref]) ws[ref].s=hs(col.c);
+      if(ws[ref]){ ws[ref].t='s'; ws[ref].z='@'; ws[ref].s=Object.assign({},hs(col.c),{numFmt:'@'}); }
     });
 
     // Data rows — center-align all cells
