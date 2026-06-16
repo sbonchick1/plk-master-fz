@@ -2985,16 +2985,22 @@ async function parseFX(file){
     }
   }
   window.FX_CADUSD=rates.CADUSD;
-  window.FX_USDCAD=rates.USDCAD; // full history (unrounded; lastFx + annual avg derive from it, then round)
-  window.FX_ANNUAL=annual;        // {2021:1.253, 2022:1.302, ...} — already 3-decimal
+  window.FX_USDCAD=rates.USDCAD; // full history (exact, full precision)
+  window.FX_ANNUAL=annual;        // exact FY averages (full precision) — {2021:1.2534..., ...}
   // Exact monthly USD→CAD rates from the treasury FX file (full precision, NOT rounded).
   // The CA conversion uses these exact rates; only the FX-rate display row rounds to 3 decimals.
   window.FX_SALES  =SALES_MONTHS.map(m=>{const v=rates.USDCAD[m]; return v!=null?v:null;});
   window.FX_EBITDA =EBITDA_MONTHS.map(m=>{const v=rates.USDCAD[m]; return v!=null?v:null;});
-  log('✓ FX Rates: CADUSD '+nc+' months · USDCAD '+nu+' months loaded (rates rounded to 3 decimals)');
-  log('  Annual averages: '+[2021,2022,2023,2024,2025].map(y=>'FY'+y+'='+(annual[y]?annual[y].toFixed(3):'-')).join(' · '));
-  log('  Sales USDCAD:  '+SALES_MONTHS.map((m,i)=>m+'='+(window.FX_SALES[i]!=null?window.FX_SALES[i].toFixed(3):'-')).join(' | '));
-  log('  EBITDA USDCAD: '+EBITDA_MONTHS.map((m,i)=>m+'='+(window.FX_EBITDA[i]!=null?window.FX_EBITDA[i].toFixed(3):'-')).join(' | '));
+  log('✓ FX Rates: CADUSD '+nc+' months · USDCAD '+nu+' months loaded (exact rates, full precision)');
+  // Exact FY annual rates (full precision) + how many months averaged — this is the rate used to convert FY columns
+  log('  FY annual USDCAD (exact, used for conversion): '+[2021,2022,2023,2024,2025].map(y=>{
+    const sfx=String(y).slice(2); const ms=MON3.map(m=>rates.USDCAD[m+'-'+sfx]).filter(v=>v!=null);
+    return 'FY'+y+'='+(annual[y]!=null?annual[y].toFixed(6):'-')+' ('+ms.length+'mo)';
+  }).join(' · '));
+  // FY2023 month-by-month inputs, so the average is fully traceable
+  log('  FY2023 monthly USDCAD inputs: '+MON3.map(m=>m+'-23='+(rates.USDCAD[m+'-23']!=null?rates.USDCAD[m+'-23']:'-')).join(' | '));
+  log('  Sales USDCAD:  '+SALES_MONTHS.map((m,i)=>m+'='+(window.FX_SALES[i]!=null?window.FX_SALES[i].toFixed(5):'-')).join(' | '));
+  log('  EBITDA USDCAD: '+EBITDA_MONTHS.map((m,i)=>m+'='+(window.FX_EBITDA[i]!=null?window.FX_EBITDA[i].toFixed(5):'-')).join(' | '));
   // Persist rates in localStorage so the CA tab header stays populated across page reloads
   try{
     localStorage.setItem('plk_fx',JSON.stringify({
