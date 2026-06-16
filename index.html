@@ -1931,10 +1931,15 @@ function renderCA(){
 function caVal(row,colIdx){ return row[colIdx+1]; }
 function renderCARows(){
   const rows=caFilt.slice(caP*PG,(caP+1)*PG);
-  document.getElementById('ca-tbody').innerHTML=rows.map(r=>'<tr>'+CA_COLS.map((col,i)=>{
-    const v=caVal(r,i), fv=fmtVal(v,col.fmt);
-    return '<td class="'+(isNeg(v)&&col.fmt?'neg':'')+'" title="'+String(fv).replace(/"/g,'&quot;')+'">'+fv+'</td>';
-  }).join('')+'</tr>').join('');
+  // Convert each row USD→CAD for display (same logic as the export) so the on-screen
+  // CA tab shows CAD, matching the manual file's "MSF value × FX rate" per-cell formula.
+  document.getElementById('ca-tbody').innerHTML=rows.map(row=>{
+    const r=caConvertRow(row);
+    return '<tr>'+CA_COLS.map((col,i)=>{
+      const v=caVal(r,i), fv=fmtVal(v,col.fmt);
+      return '<td class="'+(isNeg(v)&&col.fmt?'neg':'')+'" title="'+String(fv).replace(/"/g,'&quot;')+'">'+fv+'</td>';
+    }).join('')+'</tr>';
+  }).join('');
   pgCtrl('ca-pg',caFilt.length,'caP','renderCARows');
 }
 function pgCtrl(elId,total,pVar,fn){
@@ -2017,6 +2022,35 @@ function fx3(v){ return (v==null||isNaN(v))?null:Math.round(v*1000)/1000; }
 const FY_FX_RATES = {2021:1.253, 2022:1.302, 2023:1.349, 2024:1.370, 2025:1.397};
 // Annual USD→CAD rate for a FY: prefer the manual's published rate, else the computed avg.
 function fyRate(yr){ return FY_FX_RATES[yr]!=null ? FY_FX_RATES[yr] : fx3((window.FX_ANNUAL||{})[yr]); }
+// Convert a USD CR row to CAD — mirrors the manual file's per-cell "MSF value × FX rate"
+// formula. Returns a converted COPY (USD untouched). Used by BOTH renderCARows (live tab)
+// and buildCaAOA (export) so the on-screen CA tab and the exported file show identical CAD.
+// CR row layout: r[0]=spacer, r[ci+1]=CA_COLS[ci]. Money cols:
+//   r[15..19]=FY2021-25  r[20]=ms_prev  r[21..32]=sales  r[33]=TTM ARS  r[34]=Ann ARS
+//   r[36..47]=EBITDA mo  r[48]=TTM EBITDA  r[49]=Ann EBITDA  r[50]=EBITDA%  r[51]=Rent$
+// Percentages / counts / FSS / dates are NOT converted (currency-agnostic), matching the manual.
+function caConvertRow(row){
+  const r=row.slice();
+  const fxS=window.FX_SALES, fxE=window.FX_EBITDA;
+  if(!fxS||!fxE) return r; // FX not loaded → leave as USD
+  const n=v=>(typeof v==='number'&&isFinite(v)?v:null);
+  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?fx3(vals[vals.length-1]):null;})();
+  // FY annual (r[15..19]) × manual's published FY rate
+  for(let y=0;y<5;y++){const rt=fyRate(2021+y);if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
+  // ms_prev (r[20], Apr-25) × EBITDA_MONTHS[0] rate — display only, not summed into TTM ARS
+  {const rt=fx3(fxE[0]); if(rt&&n(r[20])!=null) r[20]=r[20]*rt;}
+  // Monthly sales (r[21..32]) × monthly rate; recompute TTM/Ann ARS (r[33]/r[34])
+  let ttmS=0,smS=0;
+  for(let i=0;i<SALES_MONTHS.length;i++){const rt=fx3(fxS[i]); if(rt&&n(r[21+i])!=null){r[21+i]=r[21+i]*rt;ttmS+=r[21+i];smS++;}}
+  if(smS>0){r[33]=ttmS;r[34]=ttmS/smS*12;}
+  // Monthly EBITDA (r[36..47]) × monthly rate; recompute TTM/Ann EBITDA + EBITDA%
+  let ttmE=0,smE=0;
+  for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fx3(fxE[i]); if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}}
+  if(smE>0){const annE=ttmE/smE*12; r[48]=ttmE; r[49]=annE; if(n(r[34])&&r[34]!==0) r[50]=annE/r[34];}
+  // Rent$ (r[51]) × latest USDCAD rate
+  if(lastFx&&n(r[51])!=null) r[51]=r[51]*lastFx;
+  return r;
+}
 // Populate/refresh the FX rates row from window.FX_SALES / FX_EBITDA / FX_ANNUAL
 function refreshCaFxRow(){
   const ann=window.FX_ANNUAL||{};
@@ -3872,37 +3906,9 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
     if(dynEbitdaMo && i>=35 && i<=46) return dynEbitdaMo[i-35];
     return c.h;
   })));
-  // Data rows — drop leading spacer at r[0], apply FX conversion when rates available
+  // Data rows — convert USD→CAD (shared with the live tab) then drop the leading spacer.
   CR.forEach(row=>{
-    const r=row.slice(); // always copy so we don't mutate the live CR array
-    if(hasFX){
-      const n=v=>(typeof v==='number'&&isFinite(v)?v:null);
-      // All USD→CAD rates rounded to 3 decimals (fx3) to match the manual file. Rounded
-      // here at point of use too, in case window.FX_* were restored from older localStorage
-      // that pre-dates the rounding in parseFX.
-      // Annual sales × FY USDCAD rate — uses the manual's published rate (fyRate)
-      for(let y=0;y<5;y++){const rt=fyRate(2021+y);if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
-      // ms_prev (13th month, Apr-25) at r[20] × EBITDA_MONTHS[0] rate — display only, NOT in TTM ARS
-      {const rt=fx3(fxE[0]); if(rt&&n(r[20])!=null) r[20]=r[20]*rt;}
-      // Monthly sales (r[21..32]) × monthly rate; recalc TTM/Ann (at r[33]/r[34])
-      let ttmS=0,smS=0;
-      for(let i=0;i<SALES_MONTHS.length;i++){
-        const rt=fx3(fxS[i]); if(rt&&n(r[21+i])!=null){r[21+i]=r[21+i]*rt;ttmS+=r[21+i];smS++;}
-      }
-      if(smS>0){r[33]=ttmS;r[34]=ttmS/smS*12;}
-      // Monthly EBITDA × monthly rate; recalc TTM/Ann (at r[48]/r[49])
-      let ttmE=0,smE=0;
-      for(let i=0;i<EBITDA_MONTHS.length;i++){
-        const rt=fx3(fxE[i]); if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}
-      }
-      if(smE>0){
-        const annE=ttmE/smE*12;
-        r[48]=ttmE; r[49]=annE;
-        if(n(r[34])&&r[34]!==0) r[50]=annE/r[34]; // EBITDA% = Ann EBITDA / Ann ARS (CAD)
-      }
-      // Rent$ at r[51] × most recent USDCAD rate
-      if(lastFx&&n(r[51])!=null) r[51]=r[51]*lastFx;
-    }
+    const r=caConvertRow(row); // CAD copy (or USD copy if FX not loaded); does not mutate CR
     // CR rows: r[0] is the leading spacer; real data is r[1..] = CA_COLS[0..] (contiguous).
     const xv=v=>v==null?'-':(v==='NaT'||v==='nat'||v==='NaN'||v==='None'||v==='NULL'||v==='null'||v==='')?'-':v;
     const clean=r.slice(1).map(xv);
