@@ -2013,15 +2013,10 @@ function buildCAHeader(){
 // Round an FX rate to 3 decimals to match the manual file's conversion rates
 // (e.g. 1.349, not 1.34916). Used for every CA-tab USD→CAD conversion + display.
 function fx3(v){ return (v==null||isNaN(v))?null:Math.round(v*1000)/1000; }
-// FY annual USD→CAD rates as published in the manual master file. These are CLOSED
-// historical years whose annual averages are fixed, and the manual derives them slightly
-// differently from a simple 12-month mean (CAD→USD averaged then inverted), so the app's
-// computed average can differ in the 3rd decimal. Using the manual's exact rates guarantees
-// the CA tab FY2021-FY2025 columns match the manual to the dollar. Update here if a rate
-// is ever revised. To fall back to the computed average for a year, remove its entry.
-const FY_FX_RATES = {2021:1.253, 2022:1.302, 2023:1.349, 2024:1.370, 2025:1.397};
-// Annual USD→CAD rate for a FY: prefer the manual's published rate, else the computed avg.
-function fyRate(yr){ return FY_FX_RATES[yr]!=null ? FY_FX_RATES[yr] : fx3((window.FX_ANNUAL||{})[yr]); }
+// Annual USD→CAD rate for a FY — the EXACT rate derived from the treasury FX file
+// (full precision, NOT rounded). 3-decimal rounding is applied only to the FX-rate
+// display row, never to the conversion math.
+function fyRate(yr){ const v=(window.FX_ANNUAL||{})[yr]; return (v==null||isNaN(v))?null:v; }
 // Convert a USD CR row to CAD — mirrors the manual file's per-cell "MSF value × FX rate"
 // formula. Returns a converted COPY (USD untouched). Used by BOTH renderCARows (live tab)
 // and buildCaAOA (export) so the on-screen CA tab and the exported file show identical CAD.
@@ -2034,20 +2029,21 @@ function caConvertRow(row){
   const fxS=window.FX_SALES, fxE=window.FX_EBITDA;
   if(!fxS||!fxE) return r; // FX not loaded → leave as USD
   const n=v=>(typeof v==='number'&&isFinite(v)?v:null);
-  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?fx3(vals[vals.length-1]):null;})();
-  // FY annual (r[15..19]) × manual's published FY rate
+  // Exact latest USD→CAD rate (full precision) for Rent$
+  const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?vals[vals.length-1]:null;})();
+  // FY annual (r[15..19]) × exact treasury FY rate
   for(let y=0;y<5;y++){const rt=fyRate(2021+y);if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
-  // ms_prev (r[20], Apr-25) × EBITDA_MONTHS[0] rate — display only, not summed into TTM ARS
-  {const rt=fx3(fxE[0]); if(rt&&n(r[20])!=null) r[20]=r[20]*rt;}
-  // Monthly sales (r[21..32]) × monthly rate; recompute TTM/Ann ARS (r[33]/r[34])
+  // ms_prev (r[20], Apr-25) × exact EBITDA_MONTHS[0] rate — display only, not summed into TTM ARS
+  {const rt=fxE[0]; if(rt&&n(r[20])!=null) r[20]=r[20]*rt;}
+  // Monthly sales (r[21..32]) × exact monthly rate; recompute TTM/Ann ARS (r[33]/r[34])
   let ttmS=0,smS=0;
-  for(let i=0;i<SALES_MONTHS.length;i++){const rt=fx3(fxS[i]); if(rt&&n(r[21+i])!=null){r[21+i]=r[21+i]*rt;ttmS+=r[21+i];smS++;}}
+  for(let i=0;i<SALES_MONTHS.length;i++){const rt=fxS[i]; if(rt&&n(r[21+i])!=null){r[21+i]=r[21+i]*rt;ttmS+=r[21+i];smS++;}}
   if(smS>0){r[33]=ttmS;r[34]=ttmS/smS*12;}
-  // Monthly EBITDA (r[36..47]) × monthly rate; recompute TTM/Ann EBITDA + EBITDA%
+  // Monthly EBITDA (r[36..47]) × exact monthly rate; recompute TTM/Ann EBITDA + EBITDA%
   let ttmE=0,smE=0;
-  for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fx3(fxE[i]); if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}}
+  for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fxE[i]; if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}}
   if(smE>0){const annE=ttmE/smE*12; r[48]=ttmE; r[49]=annE; if(n(r[34])&&r[34]!==0) r[50]=annE/r[34];}
-  // Rent$ (r[51]) × latest USDCAD rate
+  // Rent$ (r[51]) × exact latest rate
   if(lastFx&&n(r[51])!=null) r[51]=r[51]*lastFx;
   return r;
 }
@@ -2058,7 +2054,7 @@ function refreshCaFxRow(){
   const fxE=window.FX_EBITDA||[];
   const lastFx=(()=>{const u=window.FX_USDCAD||{}; const vals=Object.values(u); return vals.length?fx3(vals[vals.length-1]):null;})();
   const hasFX=fxS.some(v=>v!=null)||fxE.some(v=>v!=null)||Object.keys(ann).length>0;
-  // Show rates at 3 decimals (matches the rate precision used in the conversion math)
+  // Display rates at 3 decimals (DISPLAY ONLY — the conversion math uses the exact rate)
   const fmt3=v=>{const r=fx3(v); return r!=null?r.toFixed(3):'-';};
   // Col indices with FX content
   const setFx=(ci,val)=>{ const el=document.getElementById('cafx-'+ci); if(el) el.textContent=val; };
@@ -2983,20 +2979,18 @@ async function parseFX(file){
     const sfx=String(yr).slice(2);
     const yr_rates=MON3.map(m=>rates.USDCAD[m+'-'+sfx]).filter(v=>v!=null);
     if(yr_rates.length>0){
-      const avg=yr_rates.reduce((a,b)=>a+b,0)/yr_rates.length;
-      // Prefer the manual file's published FY rate (FY_FX_RATES); fall back to the
-      // computed 3-decimal average for any year not listed there. The manual derives
-      // these slightly differently from a simple monthly mean, so matching it exactly
-      // requires its published rate, not our average.
-      annual[yr]=FY_FX_RATES[yr]!=null?FY_FX_RATES[yr]:fx3(avg);
+      // Exact annual average from the treasury FX file's monthly rates (full precision,
+      // NOT rounded). Rounding to 3 decimals happens only in the FX-rate display row.
+      annual[yr]=yr_rates.reduce((a,b)=>a+b,0)/yr_rates.length;
     }
   }
   window.FX_CADUSD=rates.CADUSD;
   window.FX_USDCAD=rates.USDCAD; // full history (unrounded; lastFx + annual avg derive from it, then round)
   window.FX_ANNUAL=annual;        // {2021:1.253, 2022:1.302, ...} — already 3-decimal
-  // Monthly USD→CAD rates rounded to 3 decimals so every CA conversion uses 3-decimal rates
-  window.FX_SALES  =SALES_MONTHS.map(m=>fx3(rates.USDCAD[m]));
-  window.FX_EBITDA =EBITDA_MONTHS.map(m=>fx3(rates.USDCAD[m]));
+  // Exact monthly USD→CAD rates from the treasury FX file (full precision, NOT rounded).
+  // The CA conversion uses these exact rates; only the FX-rate display row rounds to 3 decimals.
+  window.FX_SALES  =SALES_MONTHS.map(m=>{const v=rates.USDCAD[m]; return v!=null?v:null;});
+  window.FX_EBITDA =EBITDA_MONTHS.map(m=>{const v=rates.USDCAD[m]; return v!=null?v:null;});
   log('✓ FX Rates: CADUSD '+nc+' months · USDCAD '+nu+' months loaded (rates rounded to 3 decimals)');
   log('  Annual averages: '+[2021,2022,2023,2024,2025].map(y=>'FY'+y+'='+(annual[y]?annual[y].toFixed(3):'-')).join(' · '));
   log('  Sales USDCAD:  '+SALES_MONTHS.map((m,i)=>m+'='+(window.FX_SALES[i]!=null?window.FX_SALES[i].toFixed(3):'-')).join(' | '));
@@ -3887,7 +3881,7 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
   //   CA_COLS[50]     = Rent$         → AOA position  51
   const fx=new Array(W).fill('');
   fx[14]='FX Rates (USD→CAD)';
-  for(let y=0;y<5;y++){const rt=fyRate(2021+y); fx[15+y]=rt!=null?rt:'';}       // FY annual USDCAD rates — manual's published values (AOA 15-19)
+  for(let y=0;y<5;y++){const rt=fx3(fyRate(2021+y)); fx[15+y]=rt!=null?rt:'';}   // FY annual USDCAD rates, 3-decimal DISPLAY only (AOA 15-19; conversion uses exact)
   {const rt=fx3(fxE[0]); fx[20]=rt!=null?rt:'';}                                  // ms_prev 13th month (Apr-25) uses EBITDA_MONTHS[0] rate (AOA 20)
   for(let i=0;i<SALES_MONTHS.length;i++){const rt=fx3(fxS[i]); fx[21+i]=rt!=null?rt:'';}   // monthly USDCAD sales (AOA 21-32)
   for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fx3(fxE[i]); fx[36+i]=rt!=null?rt:'';}  // monthly USDCAD EBITDA (AOA 36-47)
