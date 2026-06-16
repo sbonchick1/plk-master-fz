@@ -2917,7 +2917,14 @@ async function parseFX(file){
   for(let yr=2021;yr<=2025;yr++){
     const sfx=String(yr).slice(2);
     const yr_rates=MON3.map(m=>rates.USDCAD[m+'-'+sfx]).filter(v=>v!=null);
-    if(yr_rates.length>0) annual[yr]=yr_rates.reduce((a,b)=>a+b,0)/yr_rates.length;
+    if(yr_rates.length>0){
+      const avg=yr_rates.reduce((a,b)=>a+b,0)/yr_rates.length;
+      // Round to 3 decimals to match the manual file's FY conversion rates
+      // (e.g. FY2023 1.349, not the full-precision 1.34916). The manual multiplies
+      // FY USD totals by the 3-decimal rate, so the app must too or CA FY columns
+      // come out ~0.01% high.
+      annual[yr]=Math.round(avg*1000)/1000;
+    }
   }
   window.FX_CADUSD=rates.CADUSD;
   window.FX_USDCAD=rates.USDCAD; // full history
@@ -3834,8 +3841,10 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
     const r=row.slice(); // always copy so we don't mutate the live CR array
     if(hasFX){
       const n=v=>(typeof v==='number'&&isFinite(v)?v:null);
-      // Annual sales × FY average USDCAD rate
-      for(let y=0;y<5;y++){const rt=ann[2021+y];if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
+      // Annual sales × FY average USDCAD rate, rounded to 3 decimals to match the
+      // manual file (e.g. FY2023 = 1.349). Round here too in case ann[] was restored
+      // from older localStorage that pre-dates the rounding in parseFX.
+      for(let y=0;y<5;y++){const raw=ann[2021+y];const rt=raw!=null?Math.round(raw*1000)/1000:null;if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
       // Monthly sales × monthly rate; recalc TTM/Ann (at r[33]/r[34])
       let ttmS=0,smS=0;
       for(let i=0;i<SALES_MONTHS.length;i++){
