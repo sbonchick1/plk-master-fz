@@ -602,7 +602,7 @@ const DMA_COLS = [
 
 const CA_SECTIONS = [
   {l:'Restaurant Information',  span:14,                       c:C.red},
-  {l:'Annual Sales',            span:SALES_MONTHS.length+8,    c:C.orange},
+  {l:'Annual Sales',            span:SALES_MONTHS.length+9,    c:C.orange},
   {l:'Monthly Profitability',   span:EBITDA_MONTHS.length,     c:C.darkorange},
   {l:'Annual Profitability',    span:6,                        c:C.darkorange},
   {l:'Sales / Traffic Comps',  span:6,                        c:C.orange},
@@ -627,9 +627,10 @@ const CA_COLS = [
   {h:'City',c:C.red,w:110},
   {h:'Postal Code',c:C.red,w:80},
   {h:'Address',c:C.red,w:220},
-  // Annual Sales (5 FY + 12 monthly + 3 summary = 20)
+  // Annual Sales (5 FY + 1 prev-month + 12 monthly + 3 summary = 21)
   {h:'FY2021',c:C.orange,w:90,fmt:'$'},{h:'FY2022',c:C.orange,w:90,fmt:'$'},{h:'FY2023',c:C.orange,w:90,fmt:'$'},
   {h:'FY2024',c:C.orange,w:90,fmt:'$'},{h:'FY2025',c:C.orange,w:90,fmt:'$'},
+  {h:EBITDA_MONTHS[0],c:C.orange,w:80,fmt:'$'}, // 13th month (Apr-25) — sits between FY2025 and the first sales month, mirrors MSF ms_prev
   ...SALES_MONTHS.map(m=>({h:m,c:C.orange,w:80,fmt:'$'})),
   {h:'Trailing 12M ARS',c:C.orange,w:110,fmt:'$'},{h:'Annualized ARS',c:C.orange,w:110,fmt:'$'},{h:'Store Months',c:C.orange,w:80},
   // Monthly Profitability (12 EBITDA + 6 summary = 18)
@@ -1923,8 +1924,8 @@ function renderCA(){
   });
   caP=0; renderCARows(); refreshStats('ca');
 }
-// CR data rows have an extra column at r[32] (not in CA_COLS) — offset indices ≥31 by +1
-function caVal(row,colIdx){ return row[colIdx<31?colIdx+1:colIdx+2]; }
+// CR rows are built by buildCR: row[0]=spacer, row[1..]=CA_COLS[0..] (contiguous, no gap).
+function caVal(row,colIdx){ return row[colIdx+1]; }
 function renderCARows(){
   const rows=caFilt.slice(caP*PG,(caP+1)*PG);
   document.getElementById('ca-tbody').innerHTML=rows.map(r=>'<tr>'+CA_COLS.map((col,i)=>{
@@ -2007,12 +2008,14 @@ function refreshCaFxRow(){
   setFx(13, hasFX?'FX Rate (USD→CAD)':'FX Rates: not loaded');
   // FY annual rates at CA_COLS[14-18]
   for(let y=0;y<5;y++) setFx(14+y, fmt3(ann[2021+y]));
-  // Monthly sales rates at CA_COLS[19-30]
-  SALES_MONTHS.forEach((_,i)=> setFx(19+i, fmt3(fxS[i])));
-  // Monthly EBITDA rates at CA_COLS[34-45]
-  EBITDA_MONTHS.forEach((_,i)=> setFx(34+i, fmt3(fxE[i])));
-  // Rent$ rate at CA_COLS[49]
-  setFx(49, fmt3(lastFx));
+  // ms_prev (13th month, Apr-25) at CA_COLS[19] — uses EBITDA_MONTHS[0] rate
+  setFx(19, fmt3(fxE[0]));
+  // Monthly sales rates at CA_COLS[20-31]
+  SALES_MONTHS.forEach((_,i)=> setFx(20+i, fmt3(fxS[i])));
+  // Monthly EBITDA rates at CA_COLS[35-46]
+  EBITDA_MONTHS.forEach((_,i)=> setFx(35+i, fmt3(fxE[i])));
+  // Rent$ rate at CA_COLS[50]
+  setFx(50, fmt3(lastFx));
 }
 // Sticky positioning for 3-row thead
 function fixStickyRows3(theadId){
@@ -3536,42 +3539,42 @@ function calculateFields(){
 // CA tab only: mutates CR in place; does not touch SR / FR / DR / MSF.
 //
 // CR row layout (matches renderCARows' caVal + buildCaAOA export exactly):
-//   row[0]   = pandas index placeholder (dropped on export)
-//   row[1..31]  = CA_COLS[0..30]
-//   row[32]  = extra mystery column (dropped on export)
-//   row[33..92] = CA_COLS[31..90]
-// CA_COLS index → CR row index: ci<31 ? ci+1 : ci+2
+//   row[0]   = leading spacer (dropped on export; export re-adds its own spacer col)
+//   row[1..]  = CA_COLS[0..] (contiguous — no gap; buildCR owns the format now)
+// CA_COLS index → CR row index: ci + 1
 //
 // CA_KEYS maps each CA_COLS index to its SR field key. null = handled specially
-// (monthly sales 19-30 → monthly_sales[], monthly EBITDA 34-45 → ebitda_monthly[]).
+// (monthly sales 20-31 → monthly_sales[], monthly EBITDA 35-46 → ebitda_monthly[]).
+// Index 19 = 'ms_prev' (13th month, Apr-25) — a normal scalar key, no special case.
 const CA_KEYS=[
   'plk','fru','op','fg','status','div','dma','dma_id','subcluster','urb','state','city','postal','address', // 0-13
   'fy2021','fy2022','fy2023','fy2024','fy2025',                                                              // 14-18
-  null,null,null,null,null,null,null,null,null,null,null,null,                                               // 19-30 SALES_MONTHS
-  'ttm_ars','ann_ars','store_months_sales',                                                                  // 31-33
-  null,null,null,null,null,null,null,null,null,null,null,null,                                               // 34-45 EBITDA_MONTHS
-  'ttm_ebitda','ann_ebitda','ann_ebitda_pct','cur_rent','cur_rent_pct','store_months_ebitda',                // 46-51
-  'sss','sst','tickets','sss_mo','sst_mo','tickets_mo',                                                       // 52-57
-  'fss_r2','fss_r3','fss_rtd','fss_grade','acr','b3','total_tickets','car_count','wait_time','rev',           // 58-67
-  'ddl','op_mgr','fbp','gm',                                                                                  // 68-71
-  'rvp','strategy_owner','orig_open','fa_exp','f2f','fg_num','rest_owned','total_rest_dma','fz_rest_dma','pct_ownership_dma', // 72-81
-  'drive_thru_type','arch_type','loc_type','deal_type','ext_image','lat','lon','royalty','adfund',            // 82-90
+  'ms_prev',                                                                                                  // 19  13th month (EBITDA_MONTHS[0], Apr-25)
+  null,null,null,null,null,null,null,null,null,null,null,null,                                               // 20-31 SALES_MONTHS
+  'ttm_ars','ann_ars','store_months_sales',                                                                  // 32-34
+  null,null,null,null,null,null,null,null,null,null,null,null,                                               // 35-46 EBITDA_MONTHS
+  'ttm_ebitda','ann_ebitda','ann_ebitda_pct','cur_rent','cur_rent_pct','store_months_ebitda',                // 47-52
+  'sss','sst','tickets','sss_mo','sst_mo','tickets_mo',                                                       // 53-58
+  'fss_r2','fss_r3','fss_rtd','fss_grade','acr','b3','total_tickets','car_count','wait_time','rev',           // 59-68
+  'ddl','op_mgr','fbp','gm',                                                                                  // 69-72
+  'rvp','strategy_owner','orig_open','fa_exp','f2f','fg_num','rest_owned','total_rest_dma','fz_rest_dma','pct_ownership_dma', // 73-82
+  'drive_thru_type','arch_type','loc_type','deal_type','ext_image','lat','lon','royalty','adfund',            // 83-91
 ];
 function buildCR(){
   if(!Array.isArray(SR)||!Array.isArray(CR)) return;
-  const ri=ci=>ci<31?ci+1:ci+2; // CA_COLS index → CR row index (skip row[0] + row[32])
+  const ri=ci=>ci+1; // CA_COLS index → CR row index (row[0] = leading spacer)
   const rows=[];
   SR.forEach(s=>{
     if(s.country!=='CA') return; // CA tab = Canadian stores only (country from Alignment, persisted in align snap)
-    const row=new Array(93).fill(null); // idx 0 (pandas) and 32 (extra) stay null; dropped on export
+    const row=new Array(CA_COLS.length+1).fill(null); // row[0] spacer; row[1..]=CA_COLS[0..]
     for(let ci=0;ci<CA_COLS.length;ci++){
       let v=null;
-      if(ci>=19&&ci<=30){            // monthly sales → monthly_sales[0..11]
-        v=Array.isArray(s.monthly_sales)?(s.monthly_sales[ci-19]??null):null;
-      } else if(ci>=34&&ci<=45){     // monthly EBITDA → ebitda_monthly[0..11]
-        v=Array.isArray(s.ebitda_monthly)?(s.ebitda_monthly[ci-34]??null):null;
+      if(ci>=20&&ci<=31){            // monthly sales → monthly_sales[0..11]
+        v=Array.isArray(s.monthly_sales)?(s.monthly_sales[ci-20]??null):null;
+      } else if(ci>=35&&ci<=46){     // monthly EBITDA → ebitda_monthly[0..11]
+        v=Array.isArray(s.ebitda_monthly)?(s.ebitda_monthly[ci-35]??null):null;
       } else {
-        const k=CA_KEYS[ci];
+        const k=CA_KEYS[ci];        // ci 19 = 'ms_prev' (13th month) handled here as a scalar
         if(k){ const sv=s[k]; v=(sv===undefined?null:sv); }
       }
       row[ri(ci)]=v;
@@ -3579,7 +3582,7 @@ function buildCR(){
     rows.push(row);
   });
   CR.splice(0,CR.length,...rows); // mutate in place so caFilt=[...CR] / buildCaAOA see fresh rows
-  log('✓ CA Master Store File: rebuilt '+rows.length+' Canadian stores from SR (fresh list + columns, no stale data)');
+  log('✓ CA Master Store File: rebuilt '+rows.length+' Canadian stores from SR (fresh list + columns, incl. 13th month)');
 }
 
 // ─── Build FZ Summary rows from live SR data ───────
@@ -3801,9 +3804,9 @@ function buildDR(){
 }
 
 function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
-  // CR data rows have an extra mystery column at r[32] (value 0) not in CA_COLS.
-  // True positions in CR rows:
-  //   r[15-19]=FY2021-FY2025  r[20-31]=SALES months  r[32]=EXTRA(skip)
+  // CR rows are built by buildCR: r[0]=spacer, r[1..]=CA_COLS[0..] (contiguous, no gap).
+  // Positions in CR rows (r[ci+1] = CA_COLS[ci]):
+  //   r[15-19]=FY2021-FY2025  r[20]=ms_prev(Apr-25, 13th month)  r[21-32]=SALES months
   //   r[33]=TTM ARS  r[34]=Ann ARS  r[35]=Store Months(sales)
   //   r[36-47]=EBITDA months  r[48]=TTM EBITDA  r[49]=Ann EBITDA
   //   r[50]=EBITDA%  r[51]=Rent$  r[52]=Rent%  r[53]=Store Months(ebitda)
@@ -3820,28 +3823,32 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
   const t=[null,'PLK CA Master File — '+(moLbl||'')]; aoa.push(t);
   // Row 3: FX rates — positions based on CA_COLS layout (1 spacer at 0, cols at 1+)
   //   CA_COLS[14..18] = FY2021-FY2025 → AOA positions 15-19
-  //   CA_COLS[19..30] = SALES months  → AOA positions 20-31
-  //   CA_COLS[34..45] = EBITDA months → AOA positions 35-46
-  //   CA_COLS[49]     = Rent$         → AOA position  50
+  //   CA_COLS[19]     = ms_prev (Apr-25) → AOA position 20
+  //   CA_COLS[20..31] = SALES months  → AOA positions 21-32
+  //   CA_COLS[35..46] = EBITDA months → AOA positions 36-47
+  //   CA_COLS[50]     = Rent$         → AOA position  51
   const fx=new Array(W).fill('');
   fx[14]='FX Rates (USD→CAD)';
-  for(let y=0;y<5;y++){const rt=fx3(ann[2021+y]); fx[15+y]=rt!=null?rt:'';}       // FY annual avg USDCAD rates (3-decimal)
-  for(let i=0;i<SALES_MONTHS.length;i++){const rt=fx3(fxS[i]); fx[20+i]=rt!=null?rt:'';}   // monthly USDCAD sales (3-decimal)
-  for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fx3(fxE[i]); fx[35+i]=rt!=null?rt:'';}  // monthly USDCAD EBITDA (3-decimal)
-  if(lastFx) fx[50]=lastFx;                             // Rent$ uses most recent rate (already 3-decimal)
+  for(let y=0;y<5;y++){const rt=fx3(ann[2021+y]); fx[15+y]=rt!=null?rt:'';}       // FY annual avg USDCAD rates (AOA 15-19)
+  {const rt=fx3(fxE[0]); fx[20]=rt!=null?rt:'';}                                  // ms_prev 13th month (Apr-25) uses EBITDA_MONTHS[0] rate (AOA 20)
+  for(let i=0;i<SALES_MONTHS.length;i++){const rt=fx3(fxS[i]); fx[21+i]=rt!=null?rt:'';}   // monthly USDCAD sales (AOA 21-32)
+  for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fx3(fxE[i]); fx[36+i]=rt!=null?rt:'';}  // monthly USDCAD EBITDA (AOA 36-47)
+  if(lastFx) fx[51]=lastFx;                             // Rent$ uses most recent rate (AOA 51; already 3-decimal)
   aoa.push(fx);
   // Row 4: section headers — start at col B (index 1)
   const sec=new Array(W).fill('');
   let sc=1; CA_SECTIONS.forEach(s=>{sec[sc]=s.l;sc+=s.span;}); aoa.push(sec);
   // Row 5: column headers — start at col B (index 1), month cols use dynamic labels
-  // CA_COLS[19..30] = SALES_MONTHS (12 monthly sales cols)
-  // CA_COLS[34..45] = EBITDA_MONTHS (12 monthly EBITDA cols)
+  // CA_COLS[19]     = ms_prev (13th month = EBITDA_MONTHS[0], Apr-25)
+  // CA_COLS[20..31] = SALES_MONTHS (12 monthly sales cols)
+  // CA_COLS[35..46] = EBITDA_MONTHS (12 monthly EBITDA cols)
   aoa.push([''].concat(CA_COLS.map((c,i)=>{
-    if(dynSalesMo  && i>=19 && i<=30) return dynSalesMo[i-19];
-    if(dynEbitdaMo && i>=34 && i<=45) return dynEbitdaMo[i-34];
+    if(dynEbitdaMo && i===19) return dynEbitdaMo[0];        // 13th month (Apr-25)
+    if(dynSalesMo  && i>=20 && i<=31) return dynSalesMo[i-20];
+    if(dynEbitdaMo && i>=35 && i<=46) return dynEbitdaMo[i-35];
     return c.h;
   })));
-  // Data rows — strip extra column at r[32], apply FX conversion when rates available
+  // Data rows — drop leading spacer at r[0], apply FX conversion when rates available
   CR.forEach(row=>{
     const r=row.slice(); // always copy so we don't mutate the live CR array
     if(hasFX){
@@ -3851,10 +3858,12 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
       // that pre-dates the rounding in parseFX.
       // Annual sales × FY average USDCAD rate (e.g. FY2023 = 1.349)
       for(let y=0;y<5;y++){const rt=fx3(ann[2021+y]);if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
-      // Monthly sales × monthly rate; recalc TTM/Ann (at r[33]/r[34])
+      // ms_prev (13th month, Apr-25) at r[20] × EBITDA_MONTHS[0] rate — display only, NOT in TTM ARS
+      {const rt=fx3(fxE[0]); if(rt&&n(r[20])!=null) r[20]=r[20]*rt;}
+      // Monthly sales (r[21..32]) × monthly rate; recalc TTM/Ann (at r[33]/r[34])
       let ttmS=0,smS=0;
       for(let i=0;i<SALES_MONTHS.length;i++){
-        const rt=fx3(fxS[i]); if(rt&&n(r[20+i])!=null){r[20+i]=r[20+i]*rt;ttmS+=r[20+i];smS++;}
+        const rt=fx3(fxS[i]); if(rt&&n(r[21+i])!=null){r[21+i]=r[21+i]*rt;ttmS+=r[21+i];smS++;}
       }
       if(smS>0){r[33]=ttmS;r[34]=ttmS/smS*12;}
       // Monthly EBITDA × monthly rate; recalc TTM/Ann (at r[48]/r[49])
@@ -3870,12 +3879,9 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
       // Rent$ at r[51] × most recent USDCAD rate
       if(lastFx&&n(r[51])!=null) r[51]=r[51]*lastFx;
     }
-    // CR rows have a leading null at r[0] (pandas row index) — real data starts at r[1].
-    // Skip r[0] (null index) and r[32] (extra column not in CA_COLS).
-    // r.slice(1,32) = r[1]..r[31] (PLK# through last sales month, 31 elements)
-    // r.slice(33)   = r[33]..end  (TTM ARS onward, skipping r[32] extra col)
+    // CR rows: r[0] is the leading spacer; real data is r[1..] = CA_COLS[0..] (contiguous).
     const xv=v=>v==null?'-':(v==='NaT'||v==='nat'||v==='NaN'||v==='None'||v==='NULL'||v==='null'||v==='')?'-':v;
-    const clean=r.slice(1,32).concat(r.slice(33)).map(xv);
+    const clean=r.slice(1).map(xv);
     // Normalise date columns (fmt:'d') to MM/DD/YYYY; blank if missing
     CA_COLS.forEach((col,ci)=>{ if(col.fmt==='d'){ const fd=fmtD(clean[ci]); clean[ci]=fd; } });
     // %0 columns (royalty, adfund) stored as 0-100 → divide by 100 so Excel numFmt 0.0% is correct
