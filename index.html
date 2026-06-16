@@ -790,6 +790,9 @@ function updateConfig(){
   const ebitdaLbl=`EBITDA: ${MN[esMo]}-${yy(esYr)}→${MN[eeMo]}-${yy(eeYr)}`;
   const rentLbl  =`Rent: ${MN[eeMo]}-${yy(eeYr)}`;
   document.getElementById('cfg-lbl').textContent=salesLbl+' | '+ebitdaLbl+' | '+rentLbl;
+  // Rebuild the CA tab header so its month column labels (ms_prev + 12 sales + 12 EBITDA)
+  // track the current period — they read live SALES_MONTHS/EBITDA_MONTHS via caDynHeader.
+  if(document.getElementById('ca-thead')) buildCAHeader();
 }
 
 // ═══════════════════════════════════════════════════
@@ -1965,6 +1968,18 @@ function buildFilters(){
 // ═══════════════════════════════════════════════════
 // CA HEADER — 3 rows: FX Rates · Section Labels · Column Names
 // ═══════════════════════════════════════════════════
+// Live month label for a CA column — reads the current SALES_MONTHS / EBITDA_MONTHS
+// (mutated by _refreshMonthArrays) instead of the baked col.h, which is frozen to the
+// hardcoded default period at script-load. Mirrors dynColHeader on the MSF tab.
+//   CA_COLS[19]     = ms_prev (13th month) = EBITDA_MONTHS[0]
+//   CA_COLS[20..31] = SALES_MONTHS[0..11]
+//   CA_COLS[35..46] = EBITDA_MONTHS[0..11]
+function caDynHeader(col,ci){
+  if(ci===19) return EBITDA_MONTHS[0]||col.h;
+  if(ci>=20&&ci<=31) return SALES_MONTHS[ci-20]||col.h;
+  if(ci>=35&&ci<=46) return EBITDA_MONTHS[ci-35]||col.h;
+  return col.h;
+}
 function buildCAHeader(){
   const thead=document.getElementById('ca-thead');
   // Row 1: FX Rates (amber) — one cell per CA_COL, cells with rates get IDs cafx-{i}
@@ -1978,9 +1993,9 @@ function buildCAHeader(){
   let r1='<tr>';
   CA_SECTIONS.forEach(s=>{r1+='<th class="sec" colspan="'+s.span+'" style="background:#'+s.c+'">'+s.l+'</th>';});
   r1+='</tr>';
-  // Row 3: Column headers
+  // Row 3: Column headers — month cols use live labels so they track the current period
   let r2='<tr>';
-  CA_COLS.forEach((col,ci)=>{r2+='<th id="cah-'+ci+'" style="background:#'+col.c+';min-width:'+col.w+'px" title="Click for column statistics">'+col.h+'</th>';});
+  CA_COLS.forEach((col,ci)=>{r2+='<th id="cah-'+ci+'" style="background:#'+col.c+';min-width:'+col.w+'px" title="Click for column statistics">'+caDynHeader(col,ci)+'</th>';});
   r2+='</tr>';
   thead.innerHTML=r0+r1+r2;
   // Column click → stats (3rd row)
