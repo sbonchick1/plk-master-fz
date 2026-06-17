@@ -3637,6 +3637,8 @@ function buildCR(){
         const k=CA_KEYS[ci];        // ci 19 = 'ms_prev' (13th month) handled here as a scalar
         if(k){ const sv=s[k]; v=(sv===undefined?null:sv); }
       }
+      // Drive-Thru Type (ci 83): a missing/blank value shows as "None" (not a dash) on the CA tab
+      if(ci===83 && (v==null||v===''||v==='-')) v='None';
       row[ri(ci)]=v;
     }
     rows.push(row);
@@ -3918,6 +3920,9 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
     CA_COLS.forEach((col,ci)=>{ if(col.fmt==='d'){ const fd=fmtD(clean[ci]); clean[ci]=fd; } });
     // %0 columns (royalty, adfund) stored as 0-100 → divide by 100 so Excel numFmt 0.0% is correct
     CA_COLS.forEach((col,ci)=>{ if(col.fmt==='%0'&&typeof clean[ci]==='number') clean[ci]=clean[ci]/100; });
+    // Drive-Thru Type (CA_COLS index 83): a missing/blank value shows as "None" (not a dash).
+    // The local xv above strips "None" to "-", so restore it here for this column only.
+    if(clean[83]==null||clean[83]===''||clean[83]==='-') clean[83]='None';
     aoa.push([''].concat(clean)); // 1 spacer col so data starts at column B
   });
   return aoa;
