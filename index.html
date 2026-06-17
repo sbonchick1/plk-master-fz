@@ -2039,10 +2039,12 @@ function caConvertRow(row){
   let ttmS=0,smS=0;
   for(let i=0;i<SALES_MONTHS.length;i++){const rt=fxS[i]; if(rt&&n(r[21+i])!=null){r[21+i]=r[21+i]*rt;ttmS+=r[21+i];smS++;}}
   if(smS>0){r[33]=ttmS;r[34]=ttmS/smS*12;}
-  // Monthly EBITDA (r[36..47]) × exact monthly rate; recompute TTM/Ann EBITDA + EBITDA%
+  // Monthly EBITDA (r[36..47]) × exact monthly rate; recompute TTM/Ann EBITDA ($) only
   let ttmE=0,smE=0;
   for(let i=0;i<EBITDA_MONTHS.length;i++){const rt=fxE[i]; if(rt&&n(r[36+i])!=null){r[36+i]=r[36+i]*rt;ttmE+=r[36+i];smE++;}}
-  if(smE>0){const annE=ttmE/smE*12; r[48]=ttmE; r[49]=annE; if(n(r[34])&&r[34]!==0) r[50]=annE/r[34];}
+  if(smE>0){const annE=ttmE/smE*12; r[48]=ttmE; r[49]=annE;}
+  // Annualized EBITDA % (r[50]) is a ratio — NOT a currency, so it is NOT converted.
+  // It stays as the MSF value indexed in by buildCR (s.ann_ebitda_pct), matching the manual.
   // Rent$ (r[51]) × exact latest rate
   if(lastFx&&n(r[51])!=null) r[51]=r[51]*lastFx;
   return r;
