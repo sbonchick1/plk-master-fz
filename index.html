@@ -1085,7 +1085,11 @@ function handleUpload(id, inp){
 
         // Save MDS-only snap to its own dedicated key (~900 KB)
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-        const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
+        // Roy% / AdFund%: MDS Overview is authoritative — when those columns are present in the file,
+        // store the value even when blank (as null) so a store that was once a # and is now blank
+        // also clears on reload (and a once-blank store that now has a # picks it up).
+        const royCol=cm.royalty!=null, adfCol=cm.adfund!=null;
+        const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)) o[k]=null; }); return o; });
         try{
           const j=JSON.stringify({sr:mdsSnap,savedAt});
           localStorage.setItem(LS_SNAP_MDS_KEY,j);
@@ -1101,7 +1105,7 @@ function handleUpload(id, inp){
           const srMap={}; SR.forEach(s=>{srMap[s.plk]=s;});
           Object.values(mdsMap).forEach(mds=>{
             const s=srMap[mds.plk]; if(!s) return;
-            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; });
+            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)) s[k]=null; });
             if(s.drive_thru_type) s.drive_thru_type=normalizeDriveThruType(s.drive_thru_type);
           });
           calculateFields();
