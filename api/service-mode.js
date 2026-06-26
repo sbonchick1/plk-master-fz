@@ -8,37 +8,45 @@ const SF_DATABASE  = process.env.SF_DATABASE   || 'BRAND_PLK';
 const SF_SCHEMA    = process.env.SF_SCHEMA     || 'TLOG';
 const SF_ROLE      = process.env.SF_ROLE       || 'ANALYST_PLK';
 
+// MOAP (mobile order & pay) is now broken out as its own service-mode category — the
+// MOBILE_ORDER_* modes no longer roll into TAKE OUT / DRIVE THRU / EAT IN.
 const SERVICE_MODE_SQL = `
 with stores as
 (SELECT
-  store_id,
-  case when division_name is null and ownership='COMPANY' then 'Company'
-       else reporting_unit_name
+store_id,
+case when division_name is null and ownership='COMPANY' then 'Company'
+   else reporting_unit_name
   end as fz_name,
-  designated_market_Area_name as DMA,
-  case when division_name is null and ownership='COMPANY' then 'COMPANY'
-       when division_name is null and reporting_unit_name='Carrols' then 'COMPANY'
-       else division_name
+designated_market_Area_name as DMA,
+case when division_name is null and ownership='COMPANY' then 'COMPANY'
+     when division_name is null and reporting_unit_name='Carrols' then 'COMPANY'
+   else division_name
   end as division
 FROM brand_plk.STORES.STORES
 where country_code='US'),
+
+-- base pull
 base as
-(select
+(
+select
   DATE_TRUNC('week', current_year_business_day) AS week_start_date,
-  sm.store_id, s.fz_name, s.division, s.dma,
+  sm.store_id,
+  s.fz_name,
+  s.division,
+  s.dma,
   case service_mode_name
     when 'CATERING'                       then 'CATERING'
     when 'CURB_SIDE_PICK_UP'              then 'TAKE OUT'
     when 'KIOSK_TAKE_OUT'                 then 'TAKE OUT'
-    when 'MOBILE_ORDER_TAKE_OUT'          then 'TAKE OUT'
     when 'PICK_UP'                        then 'TAKE OUT'
     when 'TAKE_OUT'                       then 'TAKE OUT'
     when 'DRIVE_THROUGH'                  then 'DRIVE THRU'
-    when 'MOBILE_ORDER_DRIVE_THRU'        then 'DRIVE THRU'
     when 'EAT_IN'                         then 'EAT IN'
     when 'KIOSK_EAT_IN'                   then 'EAT IN'
     when 'KIOSK'                          then 'EAT IN'
-    when 'MOBILE_ORDER_EAT_IN'            then 'EAT IN'
+    when 'MOBILE_ORDER_TAKE_OUT'          then 'MOAP'
+    when 'MOBILE_ORDER_DRIVE_THRU'        then 'MOAP'
+    when 'MOBILE_ORDER_EAT_IN'            then 'MOAP'
     when 'THIRD_PARTY_DELIVERY_DOORDASH'  then 'DELIVERY'
     when 'THIRD_PARTY_DELIVERY_GRUBHUB'   then 'DELIVERY'
     when 'THIRD_PARTY_DELIVERY_OTHERS'    then 'DELIVERY'
@@ -53,15 +61,40 @@ left join stores s on sm.store_id = s.store_id
 where sm.country_code = 'US'
 and current_year_business_day between date '2025-12-29' and dateadd('day',-1,current_date)
 group by all),
+
+-- sum sales by store by category (numerator)
 category_totals as
-(select store_id, fz_name, division, dma, service_mode_category,
-  sum(cy_sales) as cy_category_sales from base group by all),
-store_totals as
-(select store_id, sum(cy_category_sales) as cy_store_total_sales
-  from category_totals group by store_id)
+(
 select
-  ct.store_id, ct.fz_name, ct.division, ct.dma, ct.service_mode_category,
-  ct.cy_category_sales, st.cy_store_total_sales,
+  store_id,
+  fz_name,
+  division,
+  dma,
+  service_mode_category,
+  sum(cy_sales) as cy_category_sales
+from base
+group by all
+),
+
+-- sum all sales by store (denominator)
+store_totals as
+(
+select
+  store_id,
+  sum(cy_category_sales) as cy_store_total_sales
+from category_totals
+group by store_id
+)
+
+-- final: category sales / store total sales = %
+select
+  ct.store_id,
+  ct.fz_name,
+  ct.division,
+  ct.dma,
+  ct.service_mode_category,
+  ct.cy_category_sales,
+  st.cy_store_total_sales,
   round(ct.cy_category_sales / nullif(st.cy_store_total_sales, 0) * 100, 2) as cy_sales_mix_pct
 from category_totals ct
 left join store_totals st on ct.store_id = st.store_id
@@ -161,7 +194,7 @@ async function runQuery(sql) {
   return { rows: allRows, meta: result.resultSetMetaData };
 }
 
-// ── Pivot rows → [{plk, dt_pct, eatin_pct, takeout_pct, delivery_pct}]
+// ── Pivot rows → [{plk, dt_pct, eatin_pct, takeout_pct, delivery_pct, moap_pct}]
 // Final SELECT columns: [0]=store_id [1]=fz_name [2]=division [3]=dma
 //   [4]=service_mode_category [5]=cy_category_sales [6]=cy_store_total_sales [7]=cy_sales_mix_pct (0-100)
 function pivotRows(rows) {
@@ -169,7 +202,8 @@ function pivotRows(rows) {
     'DRIVE THRU': 'dt_pct',
     'EAT IN':     'eatin_pct',
     'TAKE OUT':   'takeout_pct',
-    'DELIVERY':   'delivery_pct'
+    'DELIVERY':   'delivery_pct',
+    'MOAP':       'moap_pct'
   };
   const stores = {};
   rows.forEach(row => {

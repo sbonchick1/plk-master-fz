@@ -349,6 +349,7 @@ const M_COLS = [
   {h:'YTD Eatin %',k:'eatin_pct',c:C.teal,w:80,fmt:'%'},
   {h:'YTD Takeout %',k:'takeout_pct',c:C.teal,w:85,fmt:'%'},
   {h:'YTD Delivery %',k:'delivery_pct',c:C.teal,w:85,fmt:'%'},
+  {h:'YTD MOAP %',k:'moap_pct',c:C.teal,w:80,fmt:'%'},
   {h:'YTD Digital Sales %',k:'digital_pct',c:C.teal,w:100,fmt:'%'},
   {h:'2025 R2 FSS',k:'fss_r2',c:C.brown,w:80},
   {h:'2025 R3 FSS',k:'fss_r3',c:C.brown,w:80},
@@ -434,6 +435,7 @@ const COL_SRC = {
   eatin_pct:         'Snowflake — Service Mode Sales, Eat-In % of YTD store total sales',
   takeout_pct:       'Snowflake — Service Mode Sales, Take-Out % of YTD store total sales',
   delivery_pct:      'Snowflake — Service Mode Sales, Delivery % of YTD store total sales',
+  moap_pct:          'Snowflake — Service Mode Sales, MOAP (mobile order & pay) % of YTD store total sales',
   digital_pct:       'Digital Sales file — YTD Digital Sales % of total sales',
   // Operational Metrics (FSS)
   fss_r2:            'Snowflake — FSS Popsights (BRAND_PLK.POPSIGHTS.FSS_ROUNDLY_REST_LEVEL), 3rd most recent round star rating',
@@ -1597,6 +1599,7 @@ async function loadServiceMode(){
       if(row.eatin_pct    !=null) s.eatin_pct    =row.eatin_pct;
       if(row.takeout_pct  !=null) s.takeout_pct  =row.takeout_pct;
       if(row.delivery_pct !=null) s.delivery_pct =row.delivery_pct;
+      if(row.moap_pct     !=null) s.moap_pct     =row.moap_pct;
       n++;
     });
     st.innerHTML='&#10003; Connected — '+n+' stores &nbsp;<span style="font-size:10px;color:#92400e;background:#fef3c7;border-radius:3px;padding:2px 6px;white-space:nowrap">⚠ FY start: 12/29/2025 — update each January on input tab</span>';
@@ -2176,6 +2179,7 @@ function renderSnap(){
         +mbar('Delivery',s.delivery_pct,'#F25600')
         +mbar('Eat-in',s.eatin_pct,'#FF7D00')
         +mbar('Take-out',s.takeout_pct,'#BF6000')
+        +mbar('MOAP',s.moap_pct,'#8C4600')
         +'</div>':'');
   }
 }
