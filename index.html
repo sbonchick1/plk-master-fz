@@ -3551,6 +3551,14 @@ function calculateFields(){
 
     if(!s.ebitda_monthly||!s.ebitda_monthly.length) s.store_months_ebitda=0;
 
+    // No EBITDA months → blank Annualized EBITDA % (s.ann_ebitda_pct). The % branches above only
+    // run when EBITDA is present, so without this a store that stopped submitting keeps a STALE %
+    // from a prior period even though its TTM/Annualized EBITDA $ correctly go blank. Clearing it
+    // at the source keeps the MSF, the CA tab (which indexes this value), and BOTH the FZ and DMA
+    // Summary EBITDA % (each an AVERAGEIF of this column) consistent with the manual file — Excel's
+    // AVERAGEIF skips blanks, so a no-EBITDA store is correctly excluded from the average.
+    if(!s.store_months_ebitda) s.ann_ebitda_pct=null;
+
     // Ownership / concentration metrics
     s.rest_owned       =s.fru?fruCount[s.fru]||1:null;
     s.total_rest_dma   =s.dma_id!=null?dmaCount[s.dma_id]||0:null;
@@ -3701,12 +3709,12 @@ function buildFR(){
     const arsIdx=avgArs!=null&&sysAvgArs?avgArs/sysAvgArs*100:null;
     // L: Annualized EBITDA — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AY:$AY)
     const avgEb=avg(ss.map(s=>s.ann_ebitda));
-    // M: Annualized EBITDA % — backend formula:
-    //   =SUMIF(MSF!$C:$C, $B6, MSF!$DI:$DI) / SUMIF(MSF!$C:$C, $B6, MSF!$DH:$DH)
-    //   where DI = TTM EBITDA per store, DH = TTM Net Sales per store.
-    let sumTtmE=0,sumTtmNS=0;
-    ss.forEach(s=>{ if(s.ttm_ebitda!=null) sumTtmE+=s.ttm_ebitda; if(s.ttm_net_sales!=null) sumTtmNS+=s.ttm_net_sales; });
-    const avgEbPct=sumTtmNS>0?sumTtmE/sumTtmNS:null;
+    // M: Annualized EBITDA % — AVERAGEIF(MSF!$C:$C, $B6, MSF ann_ebitda_pct col)
+    //   Null-excluding average of each store's Annualized EBITDA %, grouped by FRU (FZ name) —
+    //   same approach as the DMA Summary (which groups by DMA ID). A store with no EBITDA has a
+    //   blank ann_ebitda_pct (cleared in calculateFields) and is excluded, matching Excel's
+    //   AVERAGEIF (which skips blanks).
+    const avgEbPct=avg(ss.map(s=>s.ann_ebitda_pct));
     // N: YTD SSS — backend formula:
     //   =SUMIF(OneStream!B, FRU, OneStream!CR) / SUMIF(OneStream!B, FRU, OneStream!CS) − 1
     //   where CR = CY YTD comparable sales, CS = PY YTD comparable sales (per-store raw).
