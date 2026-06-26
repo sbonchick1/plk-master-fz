@@ -3633,6 +3633,10 @@ const CA_KEYS=[
 function buildCR(){
   if(!Array.isArray(SR)||!Array.isArray(CR)) return;
   const ri=ci=>ci+1; // CA_COLS index → CR row index (row[0] = leading spacer)
+  // # Rest Owned on the CA tab counts only this franchisee's CANADA restaurants (this is the
+  // Canada master file). The MSF "# Rest Owned" (s.rest_owned) stays system-wide — CA-only override.
+  const caFruCount={};
+  SR.forEach(s=>{ if(s.country==='CA'&&s.fru) caFruCount[s.fru]=(caFruCount[s.fru]||0)+1; });
   const rows=[];
   SR.forEach(s=>{
     if(s.country!=='CA') return; // CA tab = Canadian stores only (country from Alignment, persisted in align snap)
@@ -3647,6 +3651,8 @@ function buildCR(){
         const k=CA_KEYS[ci];        // ci 19 = 'ms_prev' (13th month) handled here as a scalar
         if(k){ const sv=s[k]; v=(sv===undefined?null:sv); }
       }
+      // # Rest Owned (ci 79): count only this franchisee's CANADA restaurants (CA master file)
+      if(ci===79) v = s.fru ? (caFruCount[s.fru]||null) : null;
       // Drive-Thru Type (ci 83): a missing/blank value shows as "None" (not a dash) on the CA tab
       if(ci===83 && (v==null||v===''||v==='-')) v='None';
       row[ri(ci)]=v;
