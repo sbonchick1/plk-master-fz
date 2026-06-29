@@ -372,6 +372,7 @@ const M_COLS = [
   {h:'Latest F2F Date',k:'f2f',c:C.gold,w:110,fmt:'d'},
   {h:'Renovation Due Date',k:'reno_date',c:C.gold,w:110,fmt:'d'},
   {h:'Renovation Scope',k:'reno_scope',c:C.gold,w:140},
+  {h:'Image Type',k:'image_type',c:C.teal,w:100},
   {h:'Restaurant Image',k:'reno_image',c:C.teal,w:100},
   {h:'Franchise Group #',k:'fg_num',c:C.teal,w:110},
   {h:'# Rest Owned',k:'rest_owned',c:C.teal,w:90},
@@ -380,7 +381,6 @@ const M_COLS = [
   {h:'% Ownership DMA',k:'pct_ownership_dma',c:C.teal,w:110,fmt:'%'},
   {h:'Drive-Thru Type',k:'drive_thru_type',c:C.teal,w:100},
   {h:'Architecture Type',k:'arch_type',c:C.teal,w:110},
-  {h:'Image Type',k:'image_type',c:C.teal,w:100},
   {h:'Location Type',k:'loc_type',c:C.teal,w:120},
   {h:'Deal Type',k:'deal_type',c:C.teal,w:80},
   {h:'Exterior Image Type',k:'ext_image',c:C.teal,w:110},
@@ -1138,10 +1138,13 @@ function handleUpload(id, inp){
           const row=aoa[r]; if(!row||row[restCol]==null) continue;
           const plk=parseInt(row[restCol]); if(isNaN(plk)||plk<=0) continue;
           if(devMap[plk]) continue;
-          const val=row[imgCol]!=null?String(row[imgCol]).trim():null;
-          if(val) devMap[plk]={plk,image_type:val,reno_image:val};
+          // Always record Image 3 (value or null) so a now-blank store clears its prior image too.
+          const raw=row[imgCol]!=null?String(row[imgCol]).trim():'';
+          const val=raw!==''?raw:null;
+          devMap[plk]={plk,image_type:val,reno_image:val};
         }
-        const devSnap=Object.values(devMap).map(s=>{ const o={}; DEV_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
+        // Store image_type/reno_image even when null so reload applies the blank (clears stale).
+        const devSnap=Object.values(devMap).map(s=>{ const o={}; DEV_SNAP_KEYS.forEach(k=>{ o[k]=s[k]!=null?s[k]:null; }); return o; });
         if(devSnap.length===0){ log('[DevAlign scan] No rows parsed'); return; }
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
         try{
@@ -2581,10 +2584,13 @@ async function parseDevAlign(file){
     const row=aoa[r]; if(!row||row[restCol]==null) continue;
     const plk=parseInt(row[restCol]); if(isNaN(plk)||plk<=0) continue;
     const s=srMap[plk]; if(!s) continue;
-    const val=row[imgCol]!=null?String(row[imgCol]).trim():null;
-    if(val) { s.image_type=val; s.reno_image=val; n++; }
+    // Image 3 is authoritative each month (renovation projects flip old→new): always take the
+    // current value, and CLEAR to null when blank so a prior image never lingers (blank → '-').
+    const raw=row[imgCol]!=null?String(row[imgCol]).trim():'';
+    const val=raw!==''?raw:null;
+    s.image_type=val; s.reno_image=val; n++;
   }
-  log('✓ Dev Alignment: '+n+' stores updated (Image 3 → image_type + reno_image)');
+  log('✓ Dev Alignment: '+n+' stores updated (Image 3 → image_type + reno_image, blank clears)');
 }
 
 // ─── PY Sales (annual) ─────────────────────────────
