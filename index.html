@@ -183,9 +183,6 @@ tr:nth-child(even):hover td{background:#f0f3fa}
     <div class="ss-st" id="ss-st">Connecting…</div>
     <button class="ss-refresh" id="ss-refresh" onclick="loadSmartsheet()" title="Force refresh from Smartsheet" style="display:none">↻ Refresh</button>
   </div>
-  <style>/* Live-pull status tiles hidden — the data pulls still run in the background;
-     these were just connection indicators. Elements kept so the loaders don't error. */
-  #sf-bar,#ops-bar,#dig-bar,#prof-bar,#fx-bar{display:none}</style>
   <div class="ss-bar" id="sf-bar">
     <div class="ss-dot"></div>
     <div class="ss-lbl">Service Mode Sales — Snowflake</div>
@@ -1949,12 +1946,12 @@ async function loadFx(){
     window._fxRaw={usdcad:d.usdcad||{}, cadusd:d.cadusd||{}};
     applyFx();
     caFilt=[...CR]; caP=0; renderCARows(); // re-convert the CA tab with the fresh rates
-    const fy=[2021,2022,2023,2024,2025].map(y=>(window.FX_ANNUAL&&window.FX_ANNUAL[y]!=null)?window.FX_ANNUAL[y].toFixed(3):'-').join(' / ');
+    const fy=[2021,2022,2023,2024,2025].map(y=>'FY'+y+' '+((window.FX_ANNUAL&&window.FX_ANNUAL[y]!=null)?window.FX_ANNUAL[y].toFixed(3):'-')).join(' · ');
     const nMo=Object.keys(window._fxRaw.usdcad).length;
-    if(st) st.innerHTML='&#10003; Connected — '+nMo+' months · FY '+fy;
+    if(st) st.innerHTML='&#10003; Connected — '+nMo+' months · '+fy;
     if(bar) bar.className='ss-bar ok';
     if(btn) btn.style.display='';
-    log('&#10003; FX Rates (Snowflake): USD→CAD '+nMo+' months · FY2021–25 '+fy);
+    log('&#10003; FX Rates (Snowflake): USD→CAD '+nMo+' months · '+fy);
   }catch(e){
     if(st) st.textContent='Error: '+e.message;
     if(bar) bar.className='ss-bar err';
