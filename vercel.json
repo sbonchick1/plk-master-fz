@@ -5,6 +5,7 @@
     { "src": "api/service-mode.js", "use": "@vercel/node" },
     { "src": "api/operations.js",   "use": "@vercel/node" },
     { "src": "api/digital.js",      "use": "@vercel/node" },
+    { "src": "api/profitability.js","use": "@vercel/node" },
     { "src": "index.html",          "use": "@vercel/static" }
   ],
   "routes": [
@@ -12,6 +13,7 @@
     { "src": "/api/service-mode",  "dest": "/api/service-mode.js" },
     { "src": "/api/operations",    "dest": "/api/operations.js" },
     { "src": "/api/digital",       "dest": "/api/digital.js" },
+    { "src": "/api/profitability", "dest": "/api/profitability.js" },
     { "src": "/",                  "dest": "/index.html" }
   ]
 }
