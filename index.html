@@ -807,6 +807,20 @@ function updateConfig(){
   // Rebuild the CA tab header so its month column labels (ms_prev + 12 sales + 12 EBITDA)
   // track the current period — they read live SALES_MONTHS/EBITDA_MONTHS via caDynHeader.
   if(document.getElementById('ca-thead')) buildCAHeader();
+
+  // Re-anchor the cached LIVE Snowflake pulls (Profitability, FX) to the new month window —
+  // both are already fully in memory, so switching the month + Apply updates them immediately,
+  // with no Generate required. (OneStream-uploaded data — sales, SSS/SST, etc. — still needs a
+  // new file + Generate, since it only exists for whichever month was actually uploaded.)
+  if(window._profRaw||window._fxRaw){
+    applyProfitability();
+    applyFx();
+    calculateFields();
+    buildFR(); buildDR();
+    mFilt=[...SR]; mP=0; filterMaster();
+    renderFZ(); renderDMA();
+    caFilt=[...CR]; caP=0; renderCARows();
+  }
 }
 
 // ═══════════════════════════════════════════════════
