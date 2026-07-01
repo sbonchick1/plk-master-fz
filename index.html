@@ -1865,6 +1865,12 @@ function applyProfitability(){
     s.cur_rent    =(lm&&lm.rent    !=null)?lm.rent    :null;
     s.cur_rent_pct=(lm&&lm.rent_pct!=null)?lm.rent_pct:null;
   });
+  // Keep the tile's "showing thru" label in sync with the current window (fetch + Generate),
+  // so it reflects the selected file month rather than being frozen at the first fetch.
+  if(window._profMeta){
+    const st=document.getElementById('prof-st'), m=window._profMeta;
+    if(st) st.innerHTML='&#10003; Connected — '+m.count+' stores'+(m.maxMonth?' · latest data '+m.maxMonth+' · showing thru '+(EBITDA_MONTHS[EBITDA_MONTHS.length-1]||'?'):'');
+  }
 }
 async function loadProfitability(){
   const bar=document.getElementById('prof-bar');
@@ -1882,18 +1888,17 @@ async function loadProfitability(){
     const raw={};
     stores.forEach(s=>{ if(s&&s.plk!=null) raw[s.plk]=s.byMonth||{}; });
     window._profRaw=raw;
-    applyProfitability();
+    window._profMeta={count:stores.length, maxMonth:d.maxMonth};
+    applyProfitability();       // re-anchors to the current window AND refreshes the tile text
     // EBITDA / net sales feed derived fields + FZ/DMA/CA — recompute, rebuild, re-render
     calculateFields();          // recomputes ttm/ann EBITDA, ann_ebitda_pct, ttm_net_sales; rebuilds CR
     buildFR(); buildDR();
     mFilt=[...SR]; mP=0; filterMaster();
     renderFZ(); renderDMA();
     caFilt=[...CR]; caP=0; renderCARows();
-    const shown=EBITDA_MONTHS[EBITDA_MONTHS.length-1];
-    if(st) st.innerHTML='&#10003; Connected — '+stores.length+' stores'+(d.maxMonth?' · latest data '+d.maxMonth+' · showing thru '+shown:'');
     if(bar) bar.className='ss-bar ok';
     if(btn) btn.style.display='';
-    log('&#10003; Profitability (Snowflake): '+stores.length+' stores · latest data month '+(d.maxMonth||'?')+' · EBITDA window ends '+shown);
+    log('&#10003; Profitability (Snowflake): '+stores.length+' stores · latest data month '+(d.maxMonth||'?')+' · EBITDA window ends '+EBITDA_MONTHS[EBITDA_MONTHS.length-1]);
   }catch(e){
     if(st) st.textContent='Error: '+e.message;
     if(bar) bar.className='ss-bar err';
