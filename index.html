@@ -177,29 +177,11 @@ tr:nth-child(even):hover td{background:#f0f3fa}
     <button class="btn btn-g" style="padding:5px 12px;font-size:11px" onclick="updateConfig()">Apply</button>
     <span id="cfg-lbl"></span>
   </div>
-  <div class="ss-bar" id="ss-bar">
+  <div class="ss-bar" id="fx-bar">
     <div class="ss-dot"></div>
-    <div class="ss-lbl">Renovations — Smartsheet</div>
-    <div class="ss-st" id="ss-st">Connecting…</div>
-    <button class="ss-refresh" id="ss-refresh" onclick="loadSmartsheet()" title="Force refresh from Smartsheet" style="display:none">↻ Refresh</button>
-  </div>
-  <div class="ss-bar" id="sf-bar">
-    <div class="ss-dot"></div>
-    <div class="ss-lbl">Service Mode Sales — Snowflake</div>
-    <div class="ss-st" id="sf-st">Connecting…</div>
-    <button class="ss-refresh" id="sf-refresh" onclick="loadServiceMode()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
-  </div>
-  <div class="ss-bar" id="ops-bar">
-    <div class="ss-dot"></div>
-    <div class="ss-lbl">Operations / FSS — Snowflake</div>
-    <div class="ss-st" id="ops-st">Connecting…</div>
-    <button class="ss-refresh" id="ops-refresh" onclick="loadOperations()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
-  </div>
-  <div class="ss-bar" id="dig-bar">
-    <div class="ss-dot"></div>
-    <div class="ss-lbl">Digital Sales % — Snowflake</div>
-    <div class="ss-st" id="dig-st">Connecting…</div>
-    <button class="ss-refresh" id="dig-refresh" onclick="loadDigital()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
+    <div class="ss-lbl">FX Rates (USD→CAD) — Snowflake</div>
+    <div class="ss-st" id="fx-st">Connecting…</div>
+    <button class="ss-refresh" id="fx-refresh" onclick="loadFx()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
   </div>
   <div class="ss-bar" id="prof-bar">
     <div class="ss-dot"></div>
@@ -207,11 +189,29 @@ tr:nth-child(even):hover td{background:#f0f3fa}
     <div class="ss-st" id="prof-st">Connecting…</div>
     <button class="ss-refresh" id="prof-refresh" onclick="loadProfitability()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
   </div>
-  <div class="ss-bar" id="fx-bar">
+  <div class="ss-bar" id="ops-bar">
     <div class="ss-dot"></div>
-    <div class="ss-lbl">FX Rates (USD→CAD) — Snowflake</div>
-    <div class="ss-st" id="fx-st">Connecting…</div>
-    <button class="ss-refresh" id="fx-refresh" onclick="loadFx()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
+    <div class="ss-lbl">Operations / FSS — Snowflake</div>
+    <div class="ss-st" id="ops-st">Connecting…</div>
+    <button class="ss-refresh" id="ops-refresh" onclick="loadOperations()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
+  </div>
+  <div class="ss-bar" id="sf-bar">
+    <div class="ss-dot"></div>
+    <div class="ss-lbl">Service Mode Sales — Snowflake</div>
+    <div class="ss-st" id="sf-st">Connecting…</div>
+    <button class="ss-refresh" id="sf-refresh" onclick="loadServiceMode()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
+  </div>
+  <div class="ss-bar" id="dig-bar">
+    <div class="ss-dot"></div>
+    <div class="ss-lbl">Digital Sales % — Snowflake</div>
+    <div class="ss-st" id="dig-st">Connecting…</div>
+    <button class="ss-refresh" id="dig-refresh" onclick="loadDigital()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
+  </div>
+  <div class="ss-bar" id="ss-bar">
+    <div class="ss-dot"></div>
+    <div class="ss-lbl">Renovations — Smartsheet</div>
+    <div class="ss-st" id="ss-st">Connecting…</div>
+    <button class="ss-refresh" id="ss-refresh" onclick="loadSmartsheet()" title="Force refresh from Smartsheet" style="display:none">↻ Refresh</button>
   </div>
   <div class="sec-lbl">Monthly inputs — update each month</div>
   <div class="igrid" id="grid-monthly"></div>
