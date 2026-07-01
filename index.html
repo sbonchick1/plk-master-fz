@@ -201,6 +201,12 @@ tr:nth-child(even):hover td{background:#f0f3fa}
     <div class="ss-st" id="dig-st">Connecting…</div>
     <button class="ss-refresh" id="dig-refresh" onclick="loadDigital()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
   </div>
+  <div class="ss-bar" id="prof-bar">
+    <div class="ss-dot"></div>
+    <div class="ss-lbl">Profitability (P&amp;L / EBITDA) — Snowflake</div>
+    <div class="ss-st" id="prof-st">Connecting…</div>
+    <button class="ss-refresh" id="prof-refresh" onclick="loadProfitability()" title="Force refresh from Snowflake" style="display:none">↻ Refresh</button>
+  </div>
   <div class="sec-lbl">Monthly inputs — update each month</div>
   <div class="igrid" id="grid-monthly"></div>
   <div class="sec-lbl">Quarterly inputs — update quarterly or when noted</div>
@@ -277,7 +283,7 @@ tr:nth-child(even):hover td{background:#f0f3fa}
 
 const EBITDA_MONTHS = ["Mar-25","Apr-25","May-25","Jun-25","Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26"];
 const SALES_MONTHS  = ["Apr-25","May-25","Jun-25","Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26","Mar-26"]; // trailing 12 months
-const SOURCES_MONTHLY = [{"id":"fx","name":"FX Rates","desc":"20XX_FX_Rates_Distribution_*.xlsx","fmt":"xlsx","req":true,"pre":"2026_FX_Rates_Distribution_03_31_2026.xlsx"},{"id":"alignment","name":"Alignment File","desc":"PLK_Restaurants_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"PLK_Restaurants_03_30_2026.xlsx"},{"id":"dev_align","name":"Dev Alignment","desc":"PLK_NA_MDS_Alignment.xlsx — Image 3 (new vs. old image type)","fmt":"xlsx","req":false,"pre":"PLK NA_MDS Alignment.xlsx"},{"id":"mds","name":"MDS Overview","desc":"MDS_Overview_MMDDYYYY.xlsx","fmt":"xlsx","req":true,"pre":"MDS_Overview_02042026.xlsx"},{"id":"agree","name":"Agreement View","desc":"Agreement_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Agreement_View_02042026.csv"},{"id":"fg","name":"Franchise Group View","desc":"Franchise_Group_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Franchise_Group_View_02042026.csv"},{"id":"urb","name":"Urbanicity","type":"dual","req":true},{"id":"onestream","name":"One Stream Backend","desc":"Master_FZ_File_One_Stream_Backend_*.xlsx","fmt":"xlsx","req":true,"pre":"One_Stream_Backend_Feb_2026.xlsx","note":"Company EBITDA data sourced from the 'Total Company EBITDA' tab in this file. Franchisee EBITDA comes from the P&L / EBITDA input."},{"id":"pl","name":"P&L / EBITDA","desc":"Full_P_L_Crosstab_*.csv","fmt":"csv","req":true,"pre":"Full_P_L_Crosstab_4_17_26.csv"}];
+const SOURCES_MONTHLY = [{"id":"fx","name":"FX Rates","desc":"20XX_FX_Rates_Distribution_*.xlsx","fmt":"xlsx","req":true,"pre":"2026_FX_Rates_Distribution_03_31_2026.xlsx"},{"id":"alignment","name":"Alignment File","desc":"PLK_Restaurants_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"PLK_Restaurants_03_30_2026.xlsx"},{"id":"dev_align","name":"Dev Alignment","desc":"PLK_NA_MDS_Alignment.xlsx — Image 3 (new vs. old image type)","fmt":"xlsx","req":false,"pre":"PLK NA_MDS Alignment.xlsx"},{"id":"mds","name":"MDS Overview","desc":"MDS_Overview_MMDDYYYY.xlsx","fmt":"xlsx","req":true,"pre":"MDS_Overview_02042026.xlsx"},{"id":"agree","name":"Agreement View","desc":"Agreement_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Agreement_View_02042026.csv"},{"id":"fg","name":"Franchise Group View","desc":"Franchise_Group_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Franchise_Group_View_02042026.csv"},{"id":"urb","name":"Urbanicity","type":"dual","req":true},{"id":"onestream","name":"One Stream Backend","desc":"Master_FZ_File_One_Stream_Backend_*.xlsx","fmt":"xlsx","req":true,"pre":"One_Stream_Backend_Feb_2026.xlsx","note":"Company EBITDA data sourced from the 'Total Company EBITDA' tab in this file. Franchisee EBITDA comes from the Profitability (Snowflake) live pull."}];
 const SOURCES_QUARTERLY = [{"id":"deal_type","name":"Deal Type","desc":"Deal_Type_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Deal_Type_MM_DD_YYYY.xlsx","note":"Check with Asset Management Team before updating — may change quarterly. New stores not in file default to DTL."},{"id":"mp","name":"Sub-Cluster","desc":"Market_Planning_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Market_Planning_3_13_2026.xlsx","note":"Provides Market Planning Sub-Cluster only. DMA and DMA ID are sourced from the Alignment file."}];
 const SOURCES_ANNUAL  = [{"id":"py_sales","name":"PY Sales (annual)","desc":"PY_Sales_-_To_Be_Updated_Annually.xlsx \u2014 update in 2027","fmt":"xlsx","req":true,"pre":"PY_Sales_-_To_Be_Updated_Annually.xlsx"}];
 
@@ -1822,6 +1828,75 @@ async function loadDigital(){
 }
 
 // ═══════════════════════════════════════════════════
+// SNOWFLAKE — Profitability / P&L (live)  — replaces the manual P&L upload
+// ═══════════════════════════════════════════════════
+// Raw pull cached so the displayed month window can be re-anchored (on Generate) without
+// re-fetching. Shape: { plk: { "May-26":{ebitda,net_sales,rent,rent_pct}, ... } }
+window._profRaw=null;
+// Map the cached pull onto the CURRENT config-driven EBITDA_MONTHS window (which ends one month
+// before the selected file month). A newer month present in the pull (e.g. June while building the
+// June file) has no slot in the window and is simply dropped. Rent/Rent% = the last window month.
+// Company stores are skipped — their EBITDA comes from the OneStream "Total Company EBITDA" tab,
+// not the P&L (mirrors the old upload's franchisee-only role).
+function applyProfitability(){
+  if(!window._profRaw) return;
+  const raw=window._profRaw;
+  const last=EBITDA_MONTHS[EBITDA_MONTHS.length-1];
+  SR.forEach(s=>{
+    const isCompany = s.fru==='Company' ||
+      (s.fru && /plk company/i.test(s.fru)) || (s.div && /plk company/i.test(s.div));
+    if(isCompany) return; // company EBITDA is OneStream-sourced — leave untouched
+    const bm=raw[s.plk];
+    if(!bm){ // franchisee not in the P&L pull → no P&L this period (blank, never stale)
+      s.ebitda_monthly   =new Array(EBITDA_MONTHS.length).fill(null);
+      s.net_sales_monthly=new Array(EBITDA_MONTHS.length).fill(null);
+      s.cur_rent=null; s.cur_rent_pct=null;
+      return;
+    }
+    s.ebitda_monthly   =EBITDA_MONTHS.map(l=>(bm[l]&&bm[l].ebitda   !=null)?bm[l].ebitda   :null);
+    s.net_sales_monthly=EBITDA_MONTHS.map(l=>(bm[l]&&bm[l].net_sales!=null)?bm[l].net_sales:null);
+    const lm=bm[last];
+    s.cur_rent    =(lm&&lm.rent    !=null)?lm.rent    :null;
+    s.cur_rent_pct=(lm&&lm.rent_pct!=null)?lm.rent_pct:null;
+  });
+}
+async function loadProfitability(){
+  const bar=document.getElementById('prof-bar');
+  const st=document.getElementById('prof-st');
+  const btn=document.getElementById('prof-refresh');
+  if(bar) bar.className='ss-bar loading';
+  if(st) st.textContent='Connecting to Snowflake…';
+  if(btn) btn.style.display='none';
+  try{
+    const r=await fetch('/api/profitability');
+    if(!r.ok) throw new Error('HTTP '+r.status);
+    const d=await r.json();
+    if(d.error) throw new Error(d.error);
+    const stores=d.stores||[];
+    const raw={};
+    stores.forEach(s=>{ if(s&&s.plk!=null) raw[s.plk]=s.byMonth||{}; });
+    window._profRaw=raw;
+    applyProfitability();
+    // EBITDA / net sales feed derived fields + FZ/DMA/CA — recompute, rebuild, re-render
+    calculateFields();          // recomputes ttm/ann EBITDA, ann_ebitda_pct, ttm_net_sales; rebuilds CR
+    buildFR(); buildDR();
+    mFilt=[...SR]; mP=0; filterMaster();
+    renderFZ(); renderDMA();
+    caFilt=[...CR]; caP=0; renderCARows();
+    const shown=EBITDA_MONTHS[EBITDA_MONTHS.length-1];
+    if(st) st.innerHTML='&#10003; Connected — '+stores.length+' stores'+(d.maxMonth?' · latest data '+d.maxMonth+' · showing thru '+shown:'');
+    if(bar) bar.className='ss-bar ok';
+    if(btn) btn.style.display='';
+    log('&#10003; Profitability (Snowflake): '+stores.length+' stores · latest data month '+(d.maxMonth||'?')+' · EBITDA window ends '+shown);
+  }catch(e){
+    if(st) st.textContent='Error: '+e.message;
+    if(bar) bar.className='ss-bar err';
+    if(btn) btn.style.display='';
+    log('&#9888; Profitability error: '+e.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════
 // TABLE HEADERS
 // ═══════════════════════════════════════════════════
 // After building a two-row thead, measure the first row's actual rendered height
@@ -2655,6 +2730,9 @@ async function parsePY(file){
 }
 
 // ─── P&L / EBITDA (CSV crosstab) ───────────────────
+// DORMANT: the manual P&L upload tile was replaced by the live /api/profitability pull
+// (loadProfitability + applyProfitability). Kept unwired as a manual fallback — it is no longer
+// in SOURCES_MONTHLY, PARSE_ORDER, or the upload dispatch. Do not remove without a fallback plan.
 async function parsePL(file){
   // Use auto-encoding reader — P&L exports from Hyperion/OneStream are often UTF-16 LE
   const {aoa}=await readCsvAoaAutoEnc(file);
@@ -4283,7 +4361,7 @@ async function generateFile(){
         +' | EBITDA='+EBITDA_MONTHS[0]+'→'+EBITDA_MONTHS[11]);
 
     // Fixed parse order: alignment + fg must run before agree (agree needs s.fru + FG_MAP)
-    const PARSE_ORDER=['alignment','dev_align','mds','fg','py_sales','pl','urb_us','urb_ca','mp','fx',
+    const PARSE_ORDER=['alignment','dev_align','mds','fg','py_sales','urb_us','urb_ca','mp','fx',
                        'deal_type','svc','digital','ops','onestream','agree'];
     const uploaded=Object.entries(UPLOADED);
     const sorted=PARSE_ORDER
@@ -4298,7 +4376,6 @@ async function generateFile(){
       else if(id==='alignment')  await parseAlignment(file);
       else if(id==='dev_align')  await parseDevAlign(file);
       else if(id==='py_sales')   await parsePY(file);
-      else if(id==='pl')        await parsePL(file);
       else if(id==='mds')       await parseMDS(file);
       else if(id==='urb_us'||id==='urb_ca') await parseUrb(file,id);
       else if(id==='mp')        await parseMP(file);
@@ -4310,6 +4387,8 @@ async function generateFile(){
       markCardDone(id, file.name);
       pct+=step; setP(Math.round(pct));
     }
+    // Re-anchor the cached live P&L pull to the (possibly new) EBITDA window before deriving.
+    applyProfitability();
     // Compute derived fields, then rebuild FZ + DMA summary tables from live SR data
     calculateFields();
     buildFR(); // rebuild FZ Summary — grouped by FRU from SR
@@ -4526,7 +4605,8 @@ function exportExcel(){
 // FSS / Operations, Service Mode, and Digital come from live Snowflake endpoints
 // that re-fetch on every page load — no need to persist them here.
 const PERSIST_KEYS=[
-  'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',   // P&L (uploaded)
+  // P&L (ebitda_monthly/net_sales_monthly/cur_rent/cur_rent_pct) now comes from the live
+  // /api/profitability pull (loadProfitability) — re-fetched every load, so NOT persisted here.
   'monthly_sales','ms_prev',                                       // OneStream sales (uploaded)
   'sss_cy','sss_py','sst_cy','sst_py',                             // OneStream raw CY/PY comp (uploaded) — for exact FZ SUMIF/SUMIF
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',            // OneStream SSS/SST/Traffic (uploaded) — used for MSF per-store display
@@ -4943,6 +5023,7 @@ async function _init() {
   loadServiceMode();
   loadOperations();
   loadDigital();
+  loadProfitability();
 }
 
 
