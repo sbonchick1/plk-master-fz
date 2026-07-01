@@ -6,6 +6,7 @@
     { "src": "api/operations.js",   "use": "@vercel/node" },
     { "src": "api/digital.js",      "use": "@vercel/node" },
     { "src": "api/profitability.js","use": "@vercel/node" },
+    { "src": "api/fx.js",           "use": "@vercel/node" },
     { "src": "index.html",          "use": "@vercel/static" }
   ],
   "routes": [
@@ -14,6 +15,7 @@
     { "src": "/api/operations",    "dest": "/api/operations.js" },
     { "src": "/api/digital",       "dest": "/api/digital.js" },
     { "src": "/api/profitability", "dest": "/api/profitability.js" },
+    { "src": "/api/fx",            "dest": "/api/fx.js" },
     { "src": "/",                  "dest": "/index.html" }
   ]
 }
