@@ -183,6 +183,9 @@ tr:nth-child(even):hover td{background:#f0f3fa}
     <div class="ss-st" id="ss-st">Connecting…</div>
     <button class="ss-refresh" id="ss-refresh" onclick="loadSmartsheet()" title="Force refresh from Smartsheet" style="display:none">↻ Refresh</button>
   </div>
+  <style>/* Live-pull status tiles hidden — the data pulls still run in the background;
+     these were just connection indicators. Elements kept so the loaders don't error. */
+  #sf-bar,#ops-bar,#dig-bar,#prof-bar,#fx-bar{display:none}</style>
   <div class="ss-bar" id="sf-bar">
     <div class="ss-dot"></div>
     <div class="ss-lbl">Service Mode Sales — Snowflake</div>
