@@ -119,21 +119,16 @@ function monthLabel(v) {
 function pivot(rows) {
   const n = v => { const f = parseFloat(v); return isNaN(f) ? null : f; };
   const usdcad = {}, cadusd = {};
-  let matchedDir = 0, matchedLabel = 0;
   rows.forEach(r => {
     const from = String(r[0] || '').toUpperCase().trim();
     const to   = String(r[1] || '').toUpperCase().trim();
-    const isUsdCad = from === 'USD' && to === 'CAD';
-    const isCadUsd = from === 'CAD' && to === 'USD';
-    if (isUsdCad || isCadUsd) matchedDir++;
     const label = monthLabel(r[2]);
-    if (label) matchedLabel++;
     const rate = n(r[3]);
     if (!label || rate == null) return;
-    if (isUsdCad) usdcad[label] = rate;
-    else if (isCadUsd) cadusd[label] = rate;
+    if (from === 'USD' && to === 'CAD') usdcad[label] = rate;
+    else if (from === 'CAD' && to === 'USD') cadusd[label] = rate;
   });
-  return { usdcad, cadusd, matchedDir, matchedLabel };
+  return { usdcad, cadusd };
 }
 
 module.exports = async (req, res) => {
@@ -147,12 +142,8 @@ module.exports = async (req, res) => {
 
   try {
     const rows = await runQuery(FX_SQL);
-    const { usdcad, cadusd, matchedDir, matchedLabel } = pivot(rows);
-    res.status(200).json({
-      usdcad, cadusd, months: Object.keys(usdcad).length,
-      // Diagnostics — remove once confirmed working:
-      debug: { totalRows: rows.length, matchedDir, matchedLabel, sample: rows.slice(0, 4) }
-    });
+    const { usdcad, cadusd } = pivot(rows);
+    res.status(200).json({ usdcad, cadusd, months: Object.keys(usdcad).length });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
