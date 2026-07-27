@@ -1148,19 +1148,25 @@ function handleUpload(id, inp){
         const hr=findHeaderRow(aoa,['rest #','urbanicity','subcluster'],1);
         if(hr<0){ log('[MP scan] Header not found'); return; }
         const clean=v=>{ if(v==null) return null; const s=String(v).trim(); const sl=s.toLowerCase(); return (s===''||sl==='na'||sl==='n/a'||sl==='-'||sl==='none'||sl==='null')?null:s; };
+        // Full refresh: every CURRENT store starts at null (explicit, not omitted), so a store
+        // that drops out of a block — or the whole file — clears on the next reload instead of
+        // keeping whatever stale value SR_DEFAULT or an older snap happens to have.
         const mpMap={};
-        const get=plk=>{ if(!mpMap[plk]) mpMap[plk]={plk}; return mpMap[plk]; };
+        SR.forEach(s=>{ mpMap[s.plk]={plk:s.plk,urb:null,subcluster:null,mp_pop:null}; });
+        const get=plk=>{ if(!mpMap[plk]) mpMap[plk]={plk,urb:null,subcluster:null,mp_pop:null}; return mpMap[plk]; };
         // Pass 1: Urbanicity — col A (plk) / col B (urb)
+        let nUrb=0;
         for(let r=hr+1;r<aoa.length;r++){
           const row=aoa[r]; if(!row||row[0]==null) continue;
           const plk=parseInt(row[0]); if(isNaN(plk)||plk<=0) continue;
-          const v=clean(row[1]); if(v!=null) get(plk).urb=v;
+          const v=clean(row[1]); if(v!=null){ get(plk).urb=v; nUrb++; }
         }
         // Pass 2: Subcluster — col D (plk) / col E (subcluster)
+        let nSub=0;
         for(let r=hr+1;r<aoa.length;r++){
           const row=aoa[r]; if(!row||row[3]==null) continue;
           const plk=parseInt(row[3]); if(isNaN(plk)||plk<=0) continue;
-          const v=clean(row[4]); if(v!=null) get(plk).subcluster=v;
+          const v=clean(row[4]); if(v!=null){ get(plk).subcluster=v; nSub++; }
         }
         // Pass 3: DMA-code → Effective Population map (col H / col I), applied by dma_id below
         const dmaPopMap={};
@@ -1171,14 +1177,16 @@ function handleUpload(id, inp){
         }
         log('[MP scan] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND'));
         // Apply population to every SR store whose dma_id (from Alignment) is in the map
-        SR.forEach(s=>{ if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null) get(s.plk).mp_pop=dmaPopMap[s.dma_id]; });
-        const mpSnap=Object.values(mpMap).map(s=>{ const o={}; MP_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
-        if(mpSnap.length===0){ log('[MP scan] No rows parsed'); return; }
+        let nDmaPop=0;
+        SR.forEach(s=>{ if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null){ get(s.plk).mp_pop=dmaPopMap[s.dma_id]; nDmaPop++; } });
+        // Keys written explicitly (including null) — a sparse/omit-if-null snapshot would let
+        // _applySnapOverlay skip a store on the next reload, leaving a stale prior value in place.
+        const mpSnap=Object.values(mpMap);
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
         try{
           const j=JSON.stringify({sr:mpSnap,savedAt});
           localStorage.setItem(LS_SNAP_MP_KEY,j);
-          log('[MP scan] Saved: '+mpSnap.length+' stores → '+LS_SNAP_MP_KEY+' ('+Math.round(j.length/1024)+' KB)');
+          log('[MP scan] Saved: '+mpSnap.length+' stores ('+nUrb+' urb, '+nSub+' subcluster, '+nDmaPop+' population — full refresh) → '+LS_SNAP_MP_KEY+' ('+Math.round(j.length/1024)+' KB)');
         }catch(e){ log('[MP scan] Save failed: '+e.message); }
       }catch(e){ log('[MP scan] Error: '+e.message); }
     })();
@@ -2908,6 +2916,11 @@ async function parseMP(file){
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
   const clean=v=>{ if(v==null) return null; const s=String(v).trim(); const sl=s.toLowerCase(); return (s===''||sl==='na'||sl==='n/a'||sl==='-'||sl==='none'||sl==='null')?null:s; };
 
+  // Full refresh — clear all 3 fields on EVERY store first, so a store that disappears from a
+  // block (or the whole file), or whose value there goes blank, never keeps a stale value from
+  // a prior upload. Each pass below then re-populates strictly from the current file.
+  SR.forEach(s=>{ s.urb=null; s.subcluster=null; s.mp_pop=null; });
+
   // Pass 1: Urbanicity — col A (plk) / col B (urb)
   let nUrb=0;
   for(let r=hr+1;r<aoa.length;r++){
@@ -2923,9 +2936,7 @@ async function parseMP(file){
     const row=aoa[r]; if(!row||row[3]==null) continue;
     const plk=parseInt(row[3]); if(isNaN(plk)||plk<=0) continue;
     const s=srMap[plk]; if(!s) continue;
-    const v=clean(row[4]);
-    s.subcluster=v; // explicit null on blank/NA — no stale carryover
-    if(v!=null) nSub++;
+    const v=clean(row[4]); if(v!=null){ s.subcluster=v; nSub++; }
   }
 
   // Pass 3: DMA-code → Effective Population map (col H / col I)
@@ -2937,15 +2948,14 @@ async function parseMP(file){
     if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null) dmaPopMap[dmaCode]=pop;
   }
   log('[MP] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND')+' | sample: '+Object.entries(dmaPopMap).slice(0,5).map(([k,v])=>k+'='+v).join(','));
-  // Apply DMA-level population to every SR store whose dma_id (from the Alignment file) is in the map.
+  // Apply DMA-level population to every SR store whose dma_id (from the Alignment file) is in the
+  // map. A store whose DMA no longer has a population entry in the new file stays null (cleared
+  // above) rather than keeping a population figure from a DMA the file has since dropped.
   let nDmaPop=0;
   SR.forEach(s=>{
-    if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null){
-      if(s.mp_pop!==dmaPopMap[s.dma_id]) nDmaPop++;
-      s.mp_pop=dmaPopMap[s.dma_id];
-    }
+    if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null){ s.mp_pop=dmaPopMap[s.dma_id]; nDmaPop++; }
   });
-  log('✓ Market Planning: '+nUrb+' stores w/ urbanicity | '+nSub+' stores w/ sub-cluster | '+nDmaPop+' stores updated via DMA-code population map ('+Object.keys(dmaPopMap).length+' unique DMA codes)');
+  log('✓ Market Planning: '+nUrb+' stores w/ urbanicity | '+nSub+' stores w/ sub-cluster | '+nDmaPop+' stores w/ population ('+Object.keys(dmaPopMap).length+' unique DMA codes) — full refresh, no stale carryover');
 }
 
 // ─── FX Rates (XLSX) ───────────────────────────────
@@ -4687,10 +4697,21 @@ async function saveState(){
   // doesn't block quota while snaps are being written.
   try{ localStorage.removeItem(LS_KEY); }catch(e){}
 
-  // Helper: write a per-source snap from SR using a Set of allowed keys
-  function _writeSnap(snapKey, keySet, label){
+  // Helper: write a per-source snap from SR using a Set of allowed keys.
+  // forceKeys (optional): keys written EXPLICITLY as null when absent, instead of omitted —
+  // so a value that legitimately went blank clears on the next reload instead of leaving
+  // whatever stale value SR_DEFAULT (or an older snap) happens to have. Default behavior
+  // (all other snap types) is unchanged: null values are simply omitted.
+  function _writeSnap(snapKey, keySet, label, forceKeys){
     try{
-      const snap=SR.map(s=>{ const o={}; keySet.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
+      const snap=SR.map(s=>{
+        const o={};
+        keySet.forEach(k=>{
+          if(s[k]!=null) o[k]=s[k];
+          else if(forceKeys&&forceKeys.has(k)) o[k]=null;
+        });
+        return o;
+      });
       const j=JSON.stringify({sr:snap,savedAt});
       localStorage.setItem(snapKey,j);
       log('[Persist] '+label+': '+snap.length+' stores, '+Math.round(j.length/1024)+' KB');
@@ -4700,7 +4721,10 @@ async function saveState(){
   // ── 1. Per-source snaps (small — each only its own fields) ─────────────────
   _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap');
   _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap');
-  _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap');   // subcluster/mp_pop/urb
+  // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
+  // drops out of the Market Planning file — or whose value there goes blank — clears fully,
+  // with no stale value surviving a reload.
+  _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap', new Set(['subcluster','mp_pop','urb']));
   _writeSnap(LS_SNAP_DEAL_KEY,  DEAL_SNAP_KEYS,  'Deal snap');
   _writeSnap(LS_SNAP_DEV_KEY,   DEV_SNAP_KEYS,   'DevAlign snap');
   _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap');
