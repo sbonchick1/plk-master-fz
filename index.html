@@ -289,8 +289,8 @@ tr:nth-child(even):hover td{background:#f0f3fa}
 
 const EBITDA_MONTHS = ["Mar-25","Apr-25","May-25","Jun-25","Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26"];
 const SALES_MONTHS  = ["Apr-25","May-25","Jun-25","Jul-25","Aug-25","Sep-25","Oct-25","Nov-25","Dec-25","Jan-26","Feb-26","Mar-26"]; // trailing 12 months
-const SOURCES_MONTHLY = [{"id":"alignment","name":"Alignment File","desc":"PLK_Restaurants_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"PLK_Restaurants_03_30_2026.xlsx"},{"id":"dev_align","name":"Dev Alignment","desc":"PLK_NA_MDS_Alignment.xlsx — Image 3 (new vs. old image type)","fmt":"xlsx","req":false,"pre":"PLK NA_MDS Alignment.xlsx"},{"id":"mds","name":"MDS Overview","desc":"MDS_Overview_MMDDYYYY.xlsx","fmt":"xlsx","req":true,"pre":"MDS_Overview_02042026.xlsx"},{"id":"agree","name":"Agreement View","desc":"Agreement_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Agreement_View_02042026.csv"},{"id":"fg","name":"Franchise Group View","desc":"Franchise_Group_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Franchise_Group_View_02042026.csv"},{"id":"urb","name":"Urbanicity","type":"dual","req":true},{"id":"onestream","name":"One Stream Backend","desc":"Master_FZ_File_One_Stream_Backend_*.xlsx","fmt":"xlsx","req":true,"pre":"One_Stream_Backend_Feb_2026.xlsx","note":"Company EBITDA data sourced from the 'Total Company EBITDA' tab in this file. Franchisee EBITDA comes from the Profitability (Snowflake) live pull."}];
-const SOURCES_QUARTERLY = [{"id":"deal_type","name":"Deal Type","desc":"Deal_Type_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Deal_Type_MM_DD_YYYY.xlsx","note":"Check with Asset Management Team before updating — may change quarterly. New stores not in file default to DTL."},{"id":"mp","name":"Sub-Cluster","desc":"Market_Planning_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Market_Planning_3_13_2026.xlsx","note":"Provides Market Planning Sub-Cluster only. DMA and DMA ID are sourced from the Alignment file."}];
+const SOURCES_MONTHLY = [{"id":"alignment","name":"Alignment File","desc":"PLK_Restaurants_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"PLK_Restaurants_03_30_2026.xlsx"},{"id":"dev_align","name":"Dev Alignment","desc":"PLK_NA_MDS_Alignment.xlsx — Image 3 (new vs. old image type)","fmt":"xlsx","req":false,"pre":"PLK NA_MDS Alignment.xlsx"},{"id":"mds","name":"MDS Overview","desc":"MDS_Overview_MMDDYYYY.xlsx","fmt":"xlsx","req":true,"pre":"MDS_Overview_02042026.xlsx"},{"id":"agree","name":"Agreement View","desc":"Agreement_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Agreement_View_02042026.csv"},{"id":"fg","name":"Franchise Group View","desc":"Franchise_Group_View_MMDDYYYY.csv","fmt":"csv","req":true,"pre":"Franchise_Group_View_02042026.csv"},{"id":"mp","name":"Sub-Cluster & Urbanicity","desc":"Market_Planning_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Market_Planning_3_13_2026.xlsx","note":"Provides urbanicity and market planning sub-cluster now. DMA and DMA ID are sourced from the Alignment file."},{"id":"onestream","name":"One Stream Backend","desc":"Master_FZ_File_One_Stream_Backend_*.xlsx","fmt":"xlsx","req":true,"pre":"One_Stream_Backend_Feb_2026.xlsx","note":"Company EBITDA data sourced from the 'Total Company EBITDA' tab in this file. Franchisee EBITDA comes from the Profitability (Snowflake) live pull."}];
+const SOURCES_QUARTERLY = [{"id":"deal_type","name":"Deal Type","desc":"Deal_Type_MM_DD_YYYY.xlsx","fmt":"xlsx","req":true,"pre":"Deal_Type_MM_DD_YYYY.xlsx","note":"Check with Asset Management Team before updating — may change quarterly. New stores not in file default to DTL."}];
 const SOURCES_ANNUAL  = [{"id":"py_sales","name":"PY Sales (annual)","desc":"PY_Sales_-_To_Be_Updated_Annually.xlsx \u2014 update in 2027","fmt":"xlsx","req":true,"pre":"PY_Sales_-_To_Be_Updated_Annually.xlsx"}];
 
 // ═══════════════════════════════════════════════════
@@ -412,8 +412,8 @@ const COL_SRC = {
   div:               'Alignment file — Division / Region',
   dma:               'Alignment file — DMA name (ADI_NAME)',
   dma_id:            'Alignment file — DMA ID (ADI_DMI_NUMBER)',
-  subcluster:        'Market Planning file — Sub-Cluster',
-  urb:               'Urbanicity file — Urbanicity',
+  subcluster:        'Market Planning file — Subcluster (Rest # col D / Subcluster col E)',
+  urb:               'Market Planning file — Urbanicity (Rest # col A / Urbanicity col B)',
   state:             'MDS Overview — physicalAddress_stateProvinceCode',
   city:              'MDS Overview — physicalAddress_city',
   county:            'MDS Overview — CountyName',
@@ -829,7 +829,6 @@ function updateConfig(){
 const UPLOADED={};
 function buildInputsGrid(){
   function card(s){
-    if(s.type==='dual') return dualCard(s);
     const hasP=!!s.pre;
     const noteHtml=s.note?`<div style="font-size:10px;color:#92400e;background:#fef3c7;border-radius:3px;padding:3px 6px;margin-top:6px;line-height:1.4">⚠ ${s.note}</div>`:'';
     return `<div class="icard${hasP?' ok':''}" id="ic-${s.id}">
@@ -854,29 +853,6 @@ function buildInputsGrid(){
       ${noteHtml}
     </div>`;
   }
-  function dualCard(s){
-    function row(subId,label,desc){
-      return `<div style="display:flex;align-items:center;gap:8px">
-        <div style="flex:1;min-width:0">
-          <div style="font-size:11px;font-weight:600;color:var(--g700);line-height:1.3">${label}</div>
-          <div class="ic-desc" id="desc-${subId}" style="margin:2px 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${desc}</div>
-          <div class="ic-st" id="is-${subId}">Awaiting upload</div>
-        </div>
-        <button class="ubtn" id="ub-${subId}" style="flex-shrink:0" onclick="document.getElementById('fi-${subId}').click()">&#8679; Replace</button>
-        <input type="file" id="fi-${subId}" accept=".csv,.xlsx">
-      </div>`;
-    }
-    return `<div class="icard" id="ic-${s.id}">
-      <div class="ic-hdr">
-        <div><div class="ic-title">${s.name}</div></div>
-        <span class="badge req">Required</span>
-      </div>
-      <div style="display:flex;flex-direction:column;gap:10px;margin-top:6px">
-        ${row('urb_us','US — DMA name, DMA ID & Urbanicity','APD_Urbanicity_Rings_*.xlsx')}
-        ${row('urb_ca','CA — Urbanicity + Province → DMA ID','APD_Rings_*Density*.csv')}
-      </div>
-    </div>`;
-  }
   document.getElementById('grid-monthly').innerHTML=SOURCES_MONTHLY.map(card).join('');
   document.getElementById('grid-quarterly').innerHTML=SOURCES_QUARTERLY.map(card).join('');
   document.getElementById('grid-annual').innerHTML=SOURCES_ANNUAL.map(card).join('');
@@ -884,11 +860,6 @@ function buildInputsGrid(){
   [...SOURCES_MONTHLY,...SOURCES_QUARTERLY,...SOURCES_ANNUAL].forEach(s=>{
     const inp=document.getElementById('fi-'+s.id);
     if(inp) inp.addEventListener('change',function(){ handleUpload(s.id,this); });
-  });
-  // Bind dual card sub-inputs
-  Object.keys(DUAL_SUBS).forEach(subId=>{
-    const inp=document.getElementById('fi-'+subId);
-    if(inp) inp.addEventListener('change',function(){ handleUpload(subId,this); });
   });
   // Restore last-processed filename for each card from localStorage
   [...SOURCES_MONTHLY,...SOURCES_QUARTERLY,...SOURCES_ANNUAL].forEach(s=>{
@@ -900,31 +871,13 @@ function buildInputsGrid(){
       }
     }catch(e){}
   });
-  // Restore dual card sub-filenames
-  Object.keys(DUAL_SUBS).forEach(subId=>{
-    try{
-      const saved=localStorage.getItem('plk_loaded_'+subId);
-      if(saved){
-        const short=saved.length>30?saved.substring(0,30)+'…':saved;
-        document.getElementById('desc-'+subId).textContent=short;
-        document.getElementById('is-'+subId).innerHTML='&#10003; Loaded';
-        document.getElementById('is-'+subId).className='ic-st ok';
-        document.getElementById('ub-'+subId).innerHTML='&#8679; Replace';
-        document.getElementById('ub-'+subId).className='ubtn on';
-        document.getElementById('ic-'+DUAL_SUBS[subId]).className='icard ok';
-      }
-    }catch(e){}
-  });
 }
-// Maps dual-card sub-IDs to their parent card ID
-const DUAL_SUBS={urb_us:'urb', urb_ca:'urb'};
 function handleUpload(id, inp){
   if(!inp.files||!inp.files[0]) return;
   const f=inp.files[0];
   UPLOADED[id]=f;
   const short=f.name.length>30?f.name.substring(0,30)+'…':f.name;
-  // For dual card sub-IDs, update the parent card; otherwise update the card directly
-  const cardId=DUAL_SUBS[id]||id;
+  const cardId=id;
   document.getElementById('ic-'+cardId).className='icard pending';
   const nfEl=document.getElementById('nf-'+cardId);
   if(nfEl) nfEl.textContent='⟳ NEW: '+short;
@@ -1182,133 +1135,43 @@ function handleUpload(id, inp){
     })();
   }
 
-  // ── Urbanicity US: background parse → urb + dma + dma_id ──────────────────
-  if(id==='urb_us'){
-    (async()=>{
-      try{
-        const {aoa}=await readXlsxAoa(f);
-        const hr=findHeaderRow(aoa,['restnum','rest_num','density','dmaid'],1);
-        if(hr<0){ log('[Urb US scan] Header not found'); return; }
-        let plkCol=null,urbCol=null,dmaIdCol=null,dmaNameCol=null;
-        aoa[hr].forEach((h,i)=>{
-          if(!h) return; const hl=String(h).toLowerCase().trim();
-          if(hl==='restnum'||hl==='rest_num'||hl==='rest_no'||hl==='plk#') plkCol=i;
-          else if(hl==='density'||hl==='density_class'||hl==='urbanicity'||hl==='t') urbCol=i;
-          else if(hl==='dmaid'||hl==='dma_id'||hl==='dma id') dmaIdCol=i;
-          else if(hl==='dma'||hl==='dma name'||hl==='dma_name') dmaNameCol=i;
-        });
-        if(plkCol==null){ log('[Urb US scan] restnum column not found'); return; }
-        const urbMap={};
-        for(let r=hr+1;r<aoa.length;r++){
-          const row=aoa[r]; if(!row||row[plkCol]==null) continue;
-          const plk=parseInt(row[plkCol]); if(isNaN(plk)||plk<=0) continue;
-          if(urbMap[plk]) continue;
-          const s={plk};
-          if(urbCol!=null){ const urb=String(row[urbCol]||'').trim(); if(urb) s.urb=urb; }
-          // DMA intentionally not captured here — sourced from Alignment file
-          urbMap[plk]=s;
-        }
-        const urbSnap=Object.values(urbMap).map(s=>{ const o={}; URB_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
-        if(urbSnap.length===0){ log('[Urb US scan] No rows parsed'); return; }
-        const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-        try{
-          // Merge with any existing CA entries already in the snap so neither overwrites the other
-          const usPlks=new Set(urbSnap.map(s=>s.plk));
-          let existing=[];
-          try{ const raw=localStorage.getItem(LS_SNAP_URB_KEY); if(raw){ const d=JSON.parse(raw); existing=(d.sr||[]).filter(s=>!usPlks.has(s.plk)); } }catch(e){}
-          const merged=[...urbSnap,...existing];
-          const j=JSON.stringify({sr:merged,savedAt});
-          localStorage.setItem(LS_SNAP_URB_KEY,j);
-          log('[Urb US scan] Saved: '+urbSnap.length+' US stores (+ '+existing.length+' existing CA kept) → '+LS_SNAP_URB_KEY+' ('+Math.round(j.length/1024)+' KB)');
-        }catch(e){ log('[Urb US scan] Save failed: '+e.message); }
-      }catch(e){ log('[Urb US scan] Error: '+e.message); }
-    })();
-  }
-
-  // ── Urbanicity CA: background parse → urb + dma='Canada' + dma_id from province ──
-  if(id==='urb_ca'){
-    (async()=>{
-      try{
-        const ext=f.name.split('.').pop().toLowerCase();
-        const {aoa}=ext==='xlsx'?await readXlsxAoa(f):await readCsvAoa(f);
-        const hr=findHeaderRow(aoa,['restnum','rest_num','density','province'],1);
-        if(hr<0){ log('[Urb CA scan] Header not found — expected rest_num / density_class / province columns'); return; }
-        let plkCol=null,urbCol=null,provinceCol=null;
-        aoa[hr].forEach((h,i)=>{
-          if(!h) return; const hl=String(h).toLowerCase().trim();
-          if(hl==='restnum'||hl==='rest_num'||hl==='rest_no'||hl==='plk#'||hl==='restaurant #'||hl==='store#') plkCol=i;
-          else if(hl==='density'||hl==='density_class'||hl==='urbanicity'||hl==='urban type'||hl==='t') urbCol=i;
-          else if(hl==='province'||hl==='state_province'||hl==='prov'||hl==='province_code') provinceCol=i;
-        });
-        if(plkCol==null){ log('[Urb CA scan] PLK column not found — expected restnum / rest_num'); return; }
-        if(urbCol==null){ log('[Urb CA scan] Urbanicity column not found — expected density_class'); return; }
-        const urbMap={};
-        for(let r=hr+1;r<aoa.length;r++){
-          const row=aoa[r]; if(!row||row[plkCol]==null) continue;
-          const plk=parseInt(row[plkCol]); if(isNaN(plk)||plk<=0) continue;
-          if(urbMap[plk]) continue;
-          const s={plk};
-          if(urbCol!=null){ const urb=String(row[urbCol]||'').trim(); if(urb) s.urb=urb; }
-          // DMA intentionally not captured here — sourced from Alignment file
-          urbMap[plk]=s;
-        }
-        const caSnap=Object.values(urbMap).map(s=>{ const o={}; URB_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
-        if(caSnap.length===0){ log('[Urb CA scan] No rows parsed'); return; }
-        const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-        try{
-          // Merge with any existing US entries already in the snap so neither overwrites the other
-          const caPlks=new Set(caSnap.map(s=>s.plk));
-          let existing=[];
-          try{ const raw=localStorage.getItem(LS_SNAP_URB_KEY); if(raw){ const d=JSON.parse(raw); existing=(d.sr||[]).filter(s=>!caPlks.has(s.plk)); } }catch(e){}
-          const merged=[...caSnap,...existing];
-          const j=JSON.stringify({sr:merged,savedAt});
-          localStorage.setItem(LS_SNAP_URB_KEY,j);
-          log('[Urb CA scan] Saved: '+caSnap.length+' CA stores (+ '+existing.length+' existing US kept) → '+LS_SNAP_URB_KEY+' ('+Math.round(j.length/1024)+' KB)');
-        }catch(e){ log('[Urb CA scan] Save failed: '+e.message); }
-      }catch(e){ log('[Urb CA scan] Error: '+e.message); }
-    })();
-  }
-
-  // ── Market Planning: background parse → subcluster + mp_pop ─────────────────
+  // ── Market Planning: background parse → urb + subcluster + mp_pop ───────────
+  // Single header row, 3 independent column-pairs (fixed columns per current file layout):
+  //   Urbanicity:  col A (0) = Rest #, col B (1) = Urbanicity
+  //   Subcluster:  col D (3) = Rest #, col E (4) = Subcluster
+  //   Population:  col H (7) = DMA Code, col I (8) = Effective Pop (DMA Name, col G, unused —
+  //                DMA name/ID are sourced from the Alignment file)
   if(id==='mp'){
     (async()=>{
       try{
         const {aoa}=await readXlsxAoa(f);
-        const hr=findHeaderRow(aoa,['rest #','subcluster'],1);
+        const hr=findHeaderRow(aoa,['rest #','urbanicity','subcluster'],1);
         if(hr<0){ log('[MP scan] Header not found'); return; }
-        const hRow=aoa[hr];
-        const cm=buildColMap(hRow,[
-          {key:'plk',       terms:['rest #','rest#','plk#','plk #','restaurant #','store#']},
-          {key:'subcluster',terms:['subcluster','sub-cluster','sub cluster']},
-          {key:'pop',       terms:['effective pop','effective population','population']},
-          {key:'dma_code',  terms:['dma code','dma id','dma #','dma_code','dma_id']},
-        ]);
-        if(cm.plk==null){ log('[MP scan] Rest # column not found'); return; }
-        // Pass 1: Build DMA-code → Effective Population map. Use detected cols or col I/J fallback.
-        const dmaCodeIdx=cm.dma_code!=null?cm.dma_code:8;
-        const popIdx=cm.pop!=null?cm.pop:9;
+        const clean=v=>{ if(v==null) return null; const s=String(v).trim(); const sl=s.toLowerCase(); return (s===''||sl==='na'||sl==='n/a'||sl==='-'||sl==='none'||sl==='null')?null:s; };
+        const mpMap={};
+        const get=plk=>{ if(!mpMap[plk]) mpMap[plk]={plk}; return mpMap[plk]; };
+        // Pass 1: Urbanicity — col A (plk) / col B (urb)
+        for(let r=hr+1;r<aoa.length;r++){
+          const row=aoa[r]; if(!row||row[0]==null) continue;
+          const plk=parseInt(row[0]); if(isNaN(plk)||plk<=0) continue;
+          const v=clean(row[1]); if(v!=null) get(plk).urb=v;
+        }
+        // Pass 2: Subcluster — col D (plk) / col E (subcluster)
+        for(let r=hr+1;r<aoa.length;r++){
+          const row=aoa[r]; if(!row||row[3]==null) continue;
+          const plk=parseInt(row[3]); if(isNaN(plk)||plk<=0) continue;
+          const v=clean(row[4]); if(v!=null) get(plk).subcluster=v;
+        }
+        // Pass 3: DMA-code → Effective Population map (col H / col I), applied by dma_id below
         const dmaPopMap={};
         for(let r=hr+1;r<aoa.length;r++){
           const row=aoa[r]; if(!row) continue;
-          const dmaCode=parseInt(row[dmaCodeIdx]);
-          const pop=parseNum(row[popIdx]);
-          if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null){
-            dmaPopMap[dmaCode]=pop;
-          }
+          const dmaCode=parseInt(row[7]); const pop=parseNum(row[8]);
+          if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null) dmaPopMap[dmaCode]=pop;
         }
-        log('[MP scan] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND')+' | cols: dma_code idx='+dmaCodeIdx+' pop idx='+popIdx);
-        // Pass 2: Per-store subcluster, plus DMA-code-matched population
-        const mpMap={};
-        for(let r=hr+1;r<aoa.length;r++){
-          const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
-          const plk=parseInt(row[cm.plk]); if(isNaN(plk)||plk<=0) continue;
-          if(mpMap[plk]) continue;
-          const s={plk};
-          if(cm.subcluster!=null&&row[cm.subcluster]!=null){ const v=String(row[cm.subcluster]).trim(),vL=v.toLowerCase(); if(v&&vL!=='na'&&vL!=='n/a'&&vL!=='-'&&vL!=='none'&&vL!=='null') s.subcluster=v; }
-          const rowDmaCode=parseInt(row[dmaCodeIdx]);
-          if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null) s.mp_pop=dmaPopMap[rowDmaCode];
-          mpMap[plk]=s;
-        }
+        log('[MP scan] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND'));
+        // Apply population to every SR store whose dma_id (from Alignment) is in the map
+        SR.forEach(s=>{ if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null) get(s.plk).mp_pop=dmaPopMap[s.dma_id]; });
         const mpSnap=Object.values(mpMap).map(s=>{ const o={}; MP_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
         if(mpSnap.length===0){ log('[MP scan] No rows parsed'); return; }
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
@@ -1554,7 +1417,7 @@ function handleUpload(id, inp){
 }
 function markCardDone(id, fname){
   const short=fname&&fname.length>30?fname.substring(0,30)+'…':fname||'';
-  const cardId=DUAL_SUBS[id]||id;
+  const cardId=id;
   document.getElementById('ic-'+cardId).className='icard ok';
   const nfEl=document.getElementById('nf-'+cardId);
   if(nfEl) nfEl.textContent='';
@@ -2979,6 +2842,9 @@ async function parseMDS(file){
 }
 
 // ─── Urbanicity — US & CA (CSV or XLSX) ───────────
+// DORMANT: the manual Urbanicity upload tile was eliminated and consolidated into the
+// Market Planning tile (parseMP now reads urbanicity from that file directly). Kept unwired
+// as a documented fallback — no longer in SOURCES_MONTHLY, PARSE_ORDER, or the upload dispatch.
 async function parseUrb(file,id){
   // US XLSX (APD_Urbanicity_Rings*.xlsx): restnum | dmaid | dma | t (urbanicity class)
   // CA CSV  (APD_Rings*.csv):             rest_num | province | density_class
@@ -3025,81 +2891,61 @@ async function parseUrb(file,id){
   log('✓ Urbanicity ('+(isCA?'CA':'US')+'): '+n+' stores updated — urb from '+file.name);
 }
 
-// ─── Market Planning (XLSX) — Sub-Cluster + Population ────────
-// Verified columns from Market Planning_3.13.2026.xlsx (header row 1):
-//   Col E = "Rest #"        → PLK# match key
-//   Col F = "Subcluster"    → Market Planning sub-cluster label
-//   Col J = "Effective Pop" → DMA-level population (same value for all stores in a DMA)
-// DMA and DMA ID are sourced from the Alignment file (ADI_NAME / ADI_DMI_NUMBER).
+// ─── Market Planning (XLSX) — Urbanicity + Sub-Cluster + Population ────────
+// Single header row, 3 independent column-pairs (fixed columns per current file layout):
+//   Urbanicity:  col A (0) = Rest #, col B (1) = Urbanicity
+//   Subcluster:  col D (3) = Rest #, col E (4) = Subcluster
+//   Population:  col H (7) = DMA Code, col I (8) = Effective Pop  (DMA Name, col G, is NOT
+//                used — DMA name & DMA ID are sourced from the Alignment file)
+// The three blocks are read independently by their own PLK column, so they don't need to be
+// row-aligned with each other.
 async function parseMP(file){
   const {aoa}=await readXlsxAoa(file);
-  const keywords=['rest #','subcluster'];
-  const hr=findHeaderRow(aoa,keywords,1);
-  if(hr<0){log('⚠ Market Planning: header row not found — expected "Rest #" and "Subcluster" columns'); return;}
+  const hr=findHeaderRow(aoa,['rest #','urbanicity','subcluster'],1);
+  if(hr<0){log('⚠ Market Planning: header row not found — expected "Rest #"/"Urbanicity"/"Subcluster" columns'); return;}
   const hRow=aoa[hr];
-  const cm=buildColMap(hRow,[
-    {key:'plk',       terms:['rest #','rest#','plk#','plk #','restaurant #','store#']},
-    {key:'subcluster',terms:['subcluster','sub-cluster','sub cluster']},
-    {key:'pop',       terms:['effective pop','effective population','population']},
-    {key:'dma_code',  terms:['dma code','dma id','dma #','dma_code','dma_id']},
-  ]);
-  if(cm.plk==null){log('⚠ Market Planning: "Rest #" column not found'); return;}
-  if(cm.subcluster==null){log('⚠ Market Planning: "Subcluster" column not found'); return;}
+  log('[MP header] A='+JSON.stringify(hRow[0])+' B='+JSON.stringify(hRow[1])+' D='+JSON.stringify(hRow[3])+' E='+JSON.stringify(hRow[4])+' G='+JSON.stringify(hRow[6])+' H='+JSON.stringify(hRow[7])+' I='+JSON.stringify(hRow[8]));
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
+  const clean=v=>{ if(v==null) return null; const s=String(v).trim(); const sl=s.toLowerCase(); return (s===''||sl==='na'||sl==='n/a'||sl==='-'||sl==='none'||sl==='null')?null:s; };
 
-  // Diagnostic: log what we detected for header columns
-  log('[MP cols] plk='+cm.plk+' subcluster='+cm.subcluster+' pop='+cm.pop+' dma_code='+cm.dma_code+' (col I=8, col J=9 assumed)');
-  // Show first 3 data rows' col I and col J to verify they hold DMA code and population
-  for(let i=0;i<3;i++){
-    const row=aoa[hr+1+i]; if(!row) continue;
-    log('[MP row '+(hr+1+i)+'] col I (idx 8)='+JSON.stringify(row[8])+' | col J (idx 9)='+JSON.stringify(row[9])+(cm.dma_code!=null?' | hdr dma_code (idx '+cm.dma_code+')='+JSON.stringify(row[cm.dma_code]):'')+(cm.pop!=null?' | hdr pop (idx '+cm.pop+')='+JSON.stringify(row[cm.pop]):''));
+  // Pass 1: Urbanicity — col A (plk) / col B (urb)
+  let nUrb=0;
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row||row[0]==null) continue;
+    const plk=parseInt(row[0]); if(isNaN(plk)||plk<=0) continue;
+    const s=srMap[plk]; if(!s) continue;
+    const v=clean(row[1]); if(v!=null){ s.urb=v; nUrb++; }
   }
 
-  // Pass 1: Build DMA-code → Effective Population map.
-  // Prefer header-based dma_code column; fall back to col I (index 8). Same for pop (header / col J=9).
-  const dmaCodeIdx=cm.dma_code!=null?cm.dma_code:8;
-  const popIdx=cm.pop!=null?cm.pop:9;
+  // Pass 2: Subcluster — col D (plk) / col E (subcluster)
+  let nSub=0;
+  for(let r=hr+1;r<aoa.length;r++){
+    const row=aoa[r]; if(!row||row[3]==null) continue;
+    const plk=parseInt(row[3]); if(isNaN(plk)||plk<=0) continue;
+    const s=srMap[plk]; if(!s) continue;
+    const v=clean(row[4]);
+    s.subcluster=v; // explicit null on blank/NA — no stale carryover
+    if(v!=null) nSub++;
+  }
+
+  // Pass 3: DMA-code → Effective Population map (col H / col I)
   const dmaPopMap={};
   for(let r=hr+1;r<aoa.length;r++){
     const row=aoa[r]; if(!row) continue;
-    const dmaCode=parseInt(row[dmaCodeIdx]);
-    const pop=parseNum(row[popIdx]);
-    if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null){
-      dmaPopMap[dmaCode]=pop;
-    }
+    const dmaCode=parseInt(row[7]);
+    const pop=parseNum(row[8]);
+    if(!isNaN(dmaCode)&&dmaCode>0&&pop!=null&&pop>0&&dmaPopMap[dmaCode]==null) dmaPopMap[dmaCode]=pop;
   }
-  // Diagnostic: confirm 618 (Houston) is mapped and to what value
   log('[MP] dmaPopMap entries: '+Object.keys(dmaPopMap).length+' | Houston (618)='+(dmaPopMap[618]||'NOT FOUND')+' | sample: '+Object.entries(dmaPopMap).slice(0,5).map(([k,v])=>k+'='+v).join(','));
-
-  // Pass 2: Per-store subcluster + apply DMA pop based on each store's dma_id matching col I.
-  let nSub=0, nPop=0, nDmaPop=0;
-  for(let r=hr+1;r<aoa.length;r++){
-    const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
-    const plk=parseInt(row[cm.plk]); if(isNaN(plk)||plk<=0) continue;
-    const s=srMap[plk]; if(!s) continue;
-    if(row[cm.subcluster]!=null){
-      const _sc=String(row[cm.subcluster]).trim();
-      const _scL=_sc.toLowerCase();
-      if(_sc!==''&&_scL!=='na'&&_scL!=='n/a'&&_scL!=='-'&&_scL!=='none'&&_scL!=='null'){
-        s.subcluster=_sc; nSub++;
-      } else {
-        s.subcluster=null;
-      }
-    }
-    // Population is sourced from the DMA-code map. Use detected dma_code col or fallback index 8.
-    const rowDmaCode=parseInt(row[dmaCodeIdx]);
-    if(!isNaN(rowDmaCode)&&dmaPopMap[rowDmaCode]!=null){ s.mp_pop=dmaPopMap[rowDmaCode]; nPop++; }
-  }
-  // Apply DMA-level population to every SR store whose dma_id is in the map.
-  // Unconditionally overwrite — earlier cached mp_pop values may be stale (from the old
-  // header-based lookup), so we want the fresh DMA-code-matched value to win.
+  // Apply DMA-level population to every SR store whose dma_id (from the Alignment file) is in the map.
+  let nDmaPop=0;
   SR.forEach(s=>{
     if(s.dma_id!=null&&dmaPopMap[s.dma_id]!=null){
       if(s.mp_pop!==dmaPopMap[s.dma_id]) nDmaPop++;
       s.mp_pop=dmaPopMap[s.dma_id];
     }
   });
-  log('✓ Market Planning: '+nSub+' stores w/ sub-cluster | '+nPop+' stores w/ pop from MP row | '+nDmaPop+' stores updated via DMA-code map | '+Object.keys(dmaPopMap).length+' unique DMA codes mapped');
+  log('✓ Market Planning: '+nUrb+' stores w/ urbanicity | '+nSub+' stores w/ sub-cluster | '+nDmaPop+' stores updated via DMA-code population map ('+Object.keys(dmaPopMap).length+' unique DMA codes)');
 }
 
 // ─── FX Rates (XLSX) ───────────────────────────────
@@ -4447,7 +4293,7 @@ async function generateFile(){
         +' | EBITDA='+EBITDA_MONTHS[0]+'→'+EBITDA_MONTHS[11]);
 
     // Fixed parse order: alignment + fg must run before agree (agree needs s.fru + FG_MAP)
-    const PARSE_ORDER=['alignment','dev_align','mds','fg','py_sales','urb_us','urb_ca','mp',
+    const PARSE_ORDER=['alignment','dev_align','mds','fg','py_sales','mp',
                        'deal_type','svc','digital','ops','onestream','agree'];
     const uploaded=Object.entries(UPLOADED);
     const sorted=PARSE_ORDER
@@ -4463,7 +4309,6 @@ async function generateFile(){
       else if(id==='dev_align')  await parseDevAlign(file);
       else if(id==='py_sales')   await parsePY(file);
       else if(id==='mds')       await parseMDS(file);
-      else if(id==='urb_us'||id==='urb_ca') await parseUrb(file,id);
       else if(id==='mp')        await parseMP(file);
       else if(id==='agree')     await parseAgree(file);
       else if(id==='fg')        await parseFG(file);
@@ -4803,8 +4648,7 @@ const MDS_SNAP_KEYS=new Set([
   'plk','fru','op','fg','fg_num','address','city','state','county','postal',
   'drive_thru_type','arch_type','lat','lon','royalty','adfund','ext_image',
 ]);
-const URB_SNAP_KEYS  =new Set(['plk','urb']);
-const MP_SNAP_KEYS   =new Set(['plk','subcluster','mp_pop']);
+const MP_SNAP_KEYS   =new Set(['plk','subcluster','mp_pop','urb']);
 const DEAL_SNAP_KEYS =new Set(['plk','deal_type']);
 const DEV_SNAP_KEYS  =new Set(['plk','image_type','reno_image']);
 const AGREE_SNAP_KEYS=new Set(['plk','f2f','fa_exp']);
@@ -4812,7 +4656,6 @@ const PY_SNAP_KEYS   =new Set(['plk','fy2021','fy2022','fy2023','fy2024','fy2025
 
 const LS_SNAP_ALIGN_KEY ='plk_snap_align_v1';  // ~500 KB — alignment file fields
 const LS_SNAP_MDS_KEY   ='plk_snap_mds_v1';    // ~900 KB — MDS Overview fields
-const LS_SNAP_URB_KEY   ='plk_snap_urb_v1';    // ~50 KB  — urbanicity + DMA name
 const LS_SNAP_MP_KEY    ='plk_snap_mp_v1';     // ~100 KB — market planning subcluster
 const LS_SNAP_DEAL_KEY  ='plk_snap_deal_v1';   // ~30 KB  — deal type
 const LS_SNAP_DEV_KEY   ='plk_snap_dev_v1';    // ~50 KB  — dev alignment image type
@@ -4857,8 +4700,7 @@ async function saveState(){
   // ── 1. Per-source snaps (small — each only its own fields) ─────────────────
   _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap');
   _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap');
-  _writeSnap(LS_SNAP_URB_KEY,   URB_SNAP_KEYS,   'Urb snap');
-  _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap');
+  _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap');   // subcluster/mp_pop/urb
   _writeSnap(LS_SNAP_DEAL_KEY,  DEAL_SNAP_KEYS,  'Deal snap');
   _writeSnap(LS_SNAP_DEV_KEY,   DEV_SNAP_KEYS,   'DevAlign snap');
   _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap');
@@ -5011,8 +4853,7 @@ async function loadSavedState(){
   _applySnapOverlay(LS_SNAP_MDS_KEY,  'MDS snap');      // fru/op/fg/fg_num/address/royalty
   // Normalize legacy "Dual" drive_thru_type → "Double Lane" for existing saved snaps
   SR.forEach(s=>{ if(s.drive_thru_type) s.drive_thru_type=normalizeDriveThruType(s.drive_thru_type); });
-  _applySnapOverlay(LS_SNAP_URB_KEY,  'Urb snap');      // urb
-  _applySnapOverlay(LS_SNAP_MP_KEY,   'MP snap', new Set(['dma','dma_id']));  // subcluster/mp_pop — exclude stale dma fields
+  _applySnapOverlay(LS_SNAP_MP_KEY,   'MP snap', new Set(['dma','dma_id']));  // subcluster/mp_pop/urb — exclude stale dma fields
   _applySnapOverlay(LS_SNAP_DEAL_KEY, 'Deal snap');     // deal_type
   // Any store still missing deal_type (new store not yet in Deal Type file) → default DTL
   SR.forEach(s=>{ if(!s.deal_type) s.deal_type='DTL'; });
