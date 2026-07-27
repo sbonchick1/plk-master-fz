@@ -408,7 +408,7 @@ const COL_SRC = {
   fru:               'MDS Overview — Reporting Unit (col 4)',
   op:                'MDS Overview — Reporting Operator Name (col 8)',
   fg:                'MDS Overview — Franchise Group Name (col 9)',
-  status:            'Alignment file — Open / Temp Closed',
+  status:            'MDS Overview — Status (col K)',
   div:               'Alignment file — Division / Region',
   dma:               'Alignment file — DMA name (ADI_NAME)',
   dma_id:            'Alignment file — DMA ID (ADI_DMI_NUMBER)',
@@ -905,7 +905,9 @@ function handleUpload(id, inp){
         const cm=buildColMap(hRow,[
           {key:'plk',           terms:['rest_no']},
           {key:'country',       terms:['site_country_cd']},
-          {key:'status',        terms:['status_cd']},
+          // align_status_raw: read for the Open/Temp-Closed store-inclusion FILTER below only —
+          // does NOT set s.status (that field is MDS Overview-sourced exclusively; see MDS scan).
+          {key:'align_status_raw',terms:['status_cd']},
           {key:'div',           terms:['region_nm']},
           {key:'dma_id',        terms:['adi_dmi_number']},
           {key:'dma',           terms:['adi_name']},
@@ -927,8 +929,8 @@ function handleUpload(id, inp){
           const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
           const plk=parseInt(row[cm.plk]); if(isNaN(plk)||plk<=0) continue;
           if(seen.has(plk)) continue;
-          if(cm.status!=null){
-            const st=String(row[cm.status]||'').trim().toLowerCase();
+          if(cm.align_status_raw!=null){
+            const st=String(row[cm.align_status_raw]||'').trim().toLowerCase();
             if(st&&!VALID_STATUS.has(st)) continue;
           }
           if(cm.country!=null){
@@ -1022,6 +1024,7 @@ function handleUpload(id, inp){
           {key:'op',             terms:['reporting operator name','reporting operator']},
           {key:'fg',             terms:['franchise group name']},
           {key:'fg_num',         terms:['franchise group#','franchise group #','franchise group number']},
+          {key:'status',         terms:['status']}, // col K — sole source of truth (Alignment no longer sets status)
           {key:'fa_exp',         terms:['fa expiration','fa exp']},
           {key:'fa_exp_mds',     terms:['fa expiration','fa exp']}, // dedicated MSF "FA Expiration" column
           {key:'orig_open',      terms:['orig. opening dt','orig opening dt','original opening','orig. open']},
@@ -1066,16 +1069,17 @@ function handleUpload(id, inp){
 
         // Save MDS-only snap to its own dedicated key (~900 KB)
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-        // Roy% / AdFund% / FA Expiration / FRU / Operator / FG Name: MDS Overview is authoritative
-        // — when those columns are present in the file, store the value even when blank (as null)
-        // so a store that was once set and is now blank also clears on reload (and a once-blank
-        // store that now has a value picks it up). This matters most for fru/op/fg: a store that
-        // just transferred to company ownership and now has no franchisee listed must not keep
-        // showing the prior franchisee's name.
+        // Roy% / AdFund% / FA Expiration / FRU / Operator / FG Name / Status: MDS Overview is
+        // authoritative — when those columns are present in the file, store the value even when
+        // blank (as null) so a store that was once set and is now blank also clears on reload
+        // (and a once-blank store that now has a value picks it up). This matters most for
+        // fru/op/fg: a store that just transferred to company ownership and now has no
+        // franchisee listed must not keep showing the prior franchisee's name. Status is now
+        // MDS Overview-sourced exclusively (Alignment no longer sets it).
         const royCol=cm.royalty!=null, adfCol=cm.adfund!=null, faExpMdsCol=cm.fa_exp_mds!=null,
-              fruCol=cm.fru!=null, opCol=cm.op!=null, fgCol=cm.fg!=null;
+              fruCol=cm.fru!=null, opCol=cm.op!=null, fgCol=cm.fg!=null, statusCol=cm.status!=null;
         const forceNull=k=>(k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)
-                          ||(k==='fru'&&fruCol)||(k==='op'&&opCol)||(k==='fg'&&fgCol);
+                          ||(k==='fru'&&fruCol)||(k==='op'&&opCol)||(k==='fg'&&fgCol)||(k==='status'&&statusCol);
         const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if(forceNull(k)) o[k]=null; }); return o; });
         try{
           const j=JSON.stringify({sr:mdsSnap,savedAt});
@@ -2535,7 +2539,9 @@ async function parseAlignment(file){
     // Backend C96 loc_type       ← Alignment col BK = LOCATION_GRP_CD
     {key:'plk',           terms:['rest_no']},
     {key:'country',       terms:['site_country_cd']},
-    {key:'status',        terms:['status_cd']},
+    // align_status_raw: read for the Open/Temp-Closed store-inclusion FILTER below only —
+    // does NOT set s.status (that field is MDS Overview-sourced exclusively; see parseMDS).
+    {key:'align_status_raw',terms:['status_cd']},
     {key:'div',           terms:['region_nm']},
     {key:'dma_id',        terms:['adi_dmi_number']},
     {key:'dma',           terms:['adi_name']},
@@ -2571,7 +2577,7 @@ async function parseAlignment(file){
     if(seen.has(plk)){ skippedDup++; continue; }
 
     // ── Status filter: Open / Temp Closed only
-    const statusRaw=cm.status!=null?String(row[cm.status]||'').trim():'Open';
+    const statusRaw=cm.align_status_raw!=null?String(row[cm.align_status_raw]||'').trim():'Open';
     if(!VALID_STATUS.has(statusRaw.toLowerCase())){ skippedStatus++; continue; }
 
     // ── Country filter: US + CA only (skip if column exists and value doesn't match)
@@ -4660,13 +4666,15 @@ function _applyDelta(delta){
 // Splitting by source means no file can ever corrupt another's data, and the
 // total localStorage usage stays well under the 5 MB limit.
 const ALIGN_SNAP_KEYS=new Set([
-  'plk','country','status','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open',
+  // status is MDS Overview-sourced (col K) — see MDS_SNAP_KEYS — not Alignment.
+  'plk','country','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open',
 ]);
 const MDS_SNAP_KEYS=new Set([
   // orig_open covered by align snap; fa_exp covered by agree snap — omitted to save space.
   // fa_exp_mds is a separate, dedicated field for the MSF "FA Expiration" column (MDS Overview
   // col L only) — independent of fa_exp/Agreement View, which is untouched.
-  'plk','fru','op','fg','fg_num','address','city','state','county','postal',
+  // status is MDS Overview-sourced (col K) exclusively — Alignment no longer sets it.
+  'plk','fru','op','fg','fg_num','address','city','state','county','postal','status',
   'drive_thru_type','arch_type','lat','lon','royalty','adfund','ext_image','fa_exp_mds',
 ]);
 const MP_SNAP_KEYS   =new Set(['plk','subcluster','mp_pop','urb']);
@@ -4735,8 +4743,9 @@ async function saveState(){
   // blank for these in MDS Overview — e.g. a franchisee store that just transferred to company
   // ownership and no longer has a reporting unit/operator/group listed — clears fully after a
   // full Generate too, not just the quick scan (otherwise the prior franchisee's name/FRU could
-  // resurface on the next reload).
-  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg']));
+  // resurface on the next reload). status is included since MDS Overview (not Alignment) is now
+  // its sole source.
+  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg','status']));
   // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
   // drops out of the Market Planning file — or whose value there goes blank — clears fully,
   // with no stale value surviving a reload.
@@ -4890,7 +4899,7 @@ async function loadSavedState(){
 
   // 4. Per-source snaps — each file's own key, overlaid in dependency order
   _applySnapOverlay(LS_SNAP_ALIGN_KEY,'Align snap');    // div/dma_id/dma/rvp/fbp/op_mgr/gm
-  _applySnapOverlay(LS_SNAP_MDS_KEY,  'MDS snap');      // fru/op/fg/fg_num/address/royalty
+  _applySnapOverlay(LS_SNAP_MDS_KEY,  'MDS snap');      // fru/op/fg/fg_num/address/royalty/status
   // Normalize legacy "Dual" drive_thru_type → "Double Lane" for existing saved snaps
   SR.forEach(s=>{ if(s.drive_thru_type) s.drive_thru_type=normalizeDriveThruType(s.drive_thru_type); });
   _applySnapOverlay(LS_SNAP_MP_KEY,   'MP snap', new Set(['dma','dma_id']));  // subcluster/mp_pop/urb — exclude stale dma fields
