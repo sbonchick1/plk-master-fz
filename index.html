@@ -953,8 +953,13 @@ function handleUpload(id, inp){
         // Save PLK list (store-count source of truth)
         try{ localStorage.setItem(LS_PLK_LIST_KEY,JSON.stringify({plks,savedAt})); }catch(e){}
 
+        // Force-null any ALIGN_SNAP_KEYS field whose column IS present in this file but blank —
+        // otherwise the sparse/omit-if-null snapshot below would let a store that just went
+        // blank (e.g. OP/RVP/FBP/GM reassigned to nobody) keep its stale prior value on reload,
+        // since _applySnapOverlay's Object.assign never touches an omitted key.
+        const alignForceNull=k=>cm[k]!=null;
         // Save alignment-only snap to its own dedicated key (~500 KB — never hits quota)
-        const alignSnap=newStores.map(s=>{ const o={}; ALIGN_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
+        const alignSnap=newStores.map(s=>{ const o={}; ALIGN_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if(k!=='plk'&&alignForceNull(k)) o[k]=null; }); return o; });
         try{
           const j=JSON.stringify({sr:alignSnap,savedAt});
           localStorage.setItem(LS_SNAP_ALIGN_KEY,j);
@@ -4769,7 +4774,13 @@ async function saveState(){
   }
 
   // ── 1. Per-source snaps (small — each only its own fields) ─────────────────
-  _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap');
+  // forceKeys: parseAlignment() has already resolved the correct current value for every field
+  // by this point (blank cell -> null, missing column -> preserved prior value) — so whatever is
+  // null here is the correct state to persist. Without forceKeys, the sparse/omit-if-null write
+  // would let a field that just went blank (e.g. OP/RVP/FBP/GM reassigned to nobody) keep
+  // showing its stale prior value on the next reload.
+  _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap',
+    new Set(['country','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open']));
   // forceKeys: fa_exp_mds/fru/op/fg are written explicitly (even as null) so a store that goes
   // blank for these in MDS Overview — e.g. a franchisee store that just transferred to company
   // ownership and no longer has a reporting unit/operator/group listed — clears fully after a
