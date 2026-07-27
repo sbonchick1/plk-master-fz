@@ -316,7 +316,7 @@ const SECTIONS = [
   {l:'Operational Metrics',     span:10, c:C.brown},
   {l:'RBI Alignment',           span:6,  c:C.medbrown},
   {l:'Franchisee Landscape',    span:5,  c:C.gold},
-  {l:'Restaurant Attributes',   span:16, c:C.teal},
+  {l:'Restaurant Attributes',   span:15, c:C.teal},
 ];
 const M_COLS = [
   {h:'PLK#',k:'plk',c:C.red,w:50},
@@ -385,7 +385,6 @@ const M_COLS = [
   {h:'Renovation Due Date',k:'reno_date',c:C.gold,w:110,fmt:'d'},
   {h:'Renovation Scope',k:'reno_scope',c:C.gold,w:140},
   {h:'Image Type',k:'image_type',c:C.teal,w:100},
-  {h:'Restaurant Image',k:'reno_image',c:C.teal,w:100},
   {h:'Franchise Group #',k:'fg_num',c:C.teal,w:110},
   {h:'# Rest Owned',k:'rest_owned',c:C.teal,w:90},
   {h:'Total Rest in DMA',k:'total_rest_dma',c:C.teal,w:110},
@@ -476,7 +475,6 @@ const COL_SRC = {
   reno_date:         'Smartsheet — Renovation Due Date (live connection)',
   reno_scope:        'Smartsheet — Initial Renovation Scope (live connection)',
   // Restaurant Attributes
-  reno_image:        'Dev Alignment (PLK NA_MDS Alignment.xlsx) — Image 3 column (col V), new vs. old image type',
   fg_num:            'MDS Overview — Franchise Group # (col 10)',
   rest_owned:        'Calculated — count of stores in SR sharing the same Franchise Reporting Unit',
   total_rest_dma:    'Calculated — count of all stores in SR in the same DMA',
@@ -1137,9 +1135,9 @@ function handleUpload(id, inp){
           // Always record Image 3 (value or null) so a now-blank store clears its prior image too.
           const raw=row[imgCol]!=null?String(row[imgCol]).trim():'';
           const val=raw!==''?raw:null;
-          devMap[plk]={plk,image_type:val,reno_image:val};
+          devMap[plk]={plk,image_type:val};
         }
-        // Store image_type/reno_image even when null so reload applies the blank (clears stale).
+        // Store image_type even when null so reload applies the blank (clears stale).
         const devSnap=Object.values(devMap).map(s=>{ const o={}; DEV_SNAP_KEYS.forEach(k=>{ o[k]=s[k]!=null?s[k]:null; }); return o; });
         if(devSnap.length===0){ log('[DevAlign scan] No rows parsed'); return; }
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
@@ -2321,7 +2319,6 @@ function renderSnap(){
 // ║  RENOVATIONS (from Smartsheet / Renovations_*.csv)                      ║
 // ║    reno_date     ← col B  (PLK# in col A)                              ║
 // ║    reno_scope    ← col C                                                ║
-// ║    reno_image    ← Dev Alignment Image 3 col (same as image_type)      ║
 // ║                                                                          ║
 // ║  DEAL TYPE (Deal_Type_*.csv or Alignment col BK)                        ║
 // ║    deal_type     ← col B  (PLK# in col A)                              ║
@@ -2636,9 +2633,9 @@ async function parseDevAlign(file){
     // current value, and CLEAR to null when blank so a prior image never lingers (blank → '-').
     const raw=row[imgCol]!=null?String(row[imgCol]).trim():'';
     const val=raw!==''?raw:null;
-    s.image_type=val; s.reno_image=val; n++;
+    s.image_type=val; n++;
   }
-  log('✓ Dev Alignment: '+n+' stores updated (Image 3 → image_type + reno_image, blank clears)');
+  log('✓ Dev Alignment: '+n+' stores updated (Image 3 → image_type, blank clears)');
 }
 
 // ─── PY Sales (annual) ─────────────────────────────
@@ -4715,7 +4712,7 @@ const MDS_SNAP_KEYS=new Set([
 ]);
 const MP_SNAP_KEYS   =new Set(['plk','subcluster','mp_pop','urb']);
 const DEAL_SNAP_KEYS =new Set(['plk','deal_type']);
-const DEV_SNAP_KEYS  =new Set(['plk','image_type','reno_image']);
+const DEV_SNAP_KEYS  =new Set(['plk','image_type']);
 const AGREE_SNAP_KEYS=new Set(['plk','f2f','fa_exp']);
 const PY_SNAP_KEYS   =new Set(['plk','fy2021','fy2022','fy2023','fy2024','fy2025']);
 
