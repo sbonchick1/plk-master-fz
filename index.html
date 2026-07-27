@@ -1066,12 +1066,17 @@ function handleUpload(id, inp){
 
         // Save MDS-only snap to its own dedicated key (~900 KB)
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-        // Roy% / AdFund% / FA Expiration: MDS Overview is authoritative — when those columns are
-        // present in the file, store the value even when blank (as null) so a store that was
-        // once set and is now blank also clears on reload (and a once-blank store that now has
-        // a value picks it up).
-        const royCol=cm.royalty!=null, adfCol=cm.adfund!=null, faExpMdsCol=cm.fa_exp_mds!=null;
-        const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)) o[k]=null; }); return o; });
+        // Roy% / AdFund% / FA Expiration / FRU / Operator / FG Name: MDS Overview is authoritative
+        // — when those columns are present in the file, store the value even when blank (as null)
+        // so a store that was once set and is now blank also clears on reload (and a once-blank
+        // store that now has a value picks it up). This matters most for fru/op/fg: a store that
+        // just transferred to company ownership and now has no franchisee listed must not keep
+        // showing the prior franchisee's name.
+        const royCol=cm.royalty!=null, adfCol=cm.adfund!=null, faExpMdsCol=cm.fa_exp_mds!=null,
+              fruCol=cm.fru!=null, opCol=cm.op!=null, fgCol=cm.fg!=null;
+        const forceNull=k=>(k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)
+                          ||(k==='fru'&&fruCol)||(k==='op'&&opCol)||(k==='fg'&&fgCol);
+        const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if(forceNull(k)) o[k]=null; }); return o; });
         try{
           const j=JSON.stringify({sr:mdsSnap,savedAt});
           localStorage.setItem(LS_SNAP_MDS_KEY,j);
@@ -1087,7 +1092,7 @@ function handleUpload(id, inp){
           const srMap={}; SR.forEach(s=>{srMap[s.plk]=s;});
           Object.values(mdsMap).forEach(mds=>{
             const s=srMap[mds.plk]; if(!s) return;
-            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)) s[k]=null; });
+            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; else if(forceNull(k)) s[k]=null; });
             if(s.drive_thru_type) s.drive_thru_type=normalizeDriveThruType(s.drive_thru_type);
           });
           calculateFields();
@@ -4726,9 +4731,12 @@ async function saveState(){
 
   // ── 1. Per-source snaps (small — each only its own fields) ─────────────────
   _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap');
-  // forceKeys: fa_exp_mds is written explicitly (even as null) so a store that goes blank for
-  // FA Expiration in MDS Overview clears fully after a full Generate too, not just the quick scan.
-  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds']));
+  // forceKeys: fa_exp_mds/fru/op/fg are written explicitly (even as null) so a store that goes
+  // blank for these in MDS Overview — e.g. a franchisee store that just transferred to company
+  // ownership and no longer has a reporting unit/operator/group listed — clears fully after a
+  // full Generate too, not just the quick scan (otherwise the prior franchisee's name/FRU could
+  // resurface on the next reload).
+  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg']));
   // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
   // drops out of the Market Planning file — or whose value there goes blank — clears fully,
   // with no stale value surviving a reload.
