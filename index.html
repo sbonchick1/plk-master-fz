@@ -3437,6 +3437,7 @@ async function parseOneStream(file){
         // ── 3. Total Company EBITDA → ebitda_monthly (company-owned stores only)
         // Franchisee EBITDA comes from the P&L Crosstab input, not OneStream.
         // No fallbacks — only "Total Company EBITDA" is valid.
+        const foundInCoEbitda=new Set();
         if(!wb.SheetNames.includes('Total Company EBITDA')){
           log('  ⚠ Sheet "Total Company EBITDA" not found — company EBITDA will not update');
         } else {
@@ -3450,6 +3451,7 @@ async function parseOneStream(file){
               const row=aoa[r]; if(!row||row[0]==null) continue;
               const plk=parseInt(row[0]); if(isNaN(plk)||!srMap[plk]) continue;
               const s=srMap[plk];
+              foundInCoEbitda.add(plk);
               // Always reset to fresh null array — prevents prior month's values bleeding through
               s.ebitda_monthly=new Array(EBITDA_MONTHS.length).fill(null);
               tr.labels.forEach((lbl,i)=>{
@@ -3462,6 +3464,21 @@ async function parseOneStream(file){
           }
           log('  Total Company EBITDA: '+nEbitda+' stores updated (EBITDA)');
         }
+        // Clear stale franchisee-era EBITDA/net sales/rent for any store that is NOW classified
+        // as company (e.g. just acquired — Alignment div already says "PLK Company ...") but is
+        // NOT YET listed in this month's "Total Company EBITDA" tab. Without this, a newly
+        // acquired store would keep showing its pre-acquisition franchisee P&L data indefinitely
+        // — applyProfitability() deliberately skips company stores, so nothing else would ever
+        // clear it once acquired.
+        let nClearedNewCompany=0;
+        SR.forEach(s=>{
+          const isCompanyNow = s.fru==='Company' || (s.fru&&/plk company/i.test(s.fru)) || (s.div&&/plk company/i.test(s.div));
+          if(isCompanyNow && !foundInCoEbitda.has(s.plk)){
+            if(s.ebitda_monthly!=null||s.net_sales_monthly!=null||s.cur_rent!=null||s.cur_rent_pct!=null) nClearedNewCompany++;
+            s.ebitda_monthly=null; s.net_sales_monthly=null; s.cur_rent=null; s.cur_rent_pct=null;
+          }
+        });
+        if(nClearedNewCompany>0) log('  Total Company EBITDA: cleared stale pre-acquisition EBITDA for '+nClearedNewCompany+' company store(s) not yet in this tab');
 
         log('✓ OneStream parsing complete.');
         resolve();
@@ -4617,6 +4634,12 @@ function _saveDeltaToLS(){
   let existingDelta={};
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) existingDelta=JSON.parse(raw); }catch(e){}
 
+  // These 4 must NOT inherit a stale value from the previous delta when the current in-memory
+  // value is null — e.g. a company store cleared of pre-acquisition franchisee EBITDA (see
+  // parseOneStream's Total Company EBITDA section) must stay cleared on reload, not have the
+  // old value silently restored by the merge-with-previous logic below.
+  const FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct']);
+
   const delta={
     savedAt:new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
   };
@@ -4627,6 +4650,7 @@ function _saveDeltaToLS(){
     PERSIST_KEYS.forEach(k=>{
       const v=s[k];
       if(v!=null) d[k]=v;
+      else if(FORCE_NULL_KEYS.has(k)) d[k]=null;
     });
     if(Object.keys(d).length>0){ delta[s.plk]=d; storesWithData++; }
   });
