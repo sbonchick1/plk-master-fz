@@ -380,7 +380,7 @@ const M_COLS = [
   {h:'RVP',k:'rvp',c:C.gold,w:130},
   {h:'Strategy Owner',k:'strategy_owner',c:C.gold,w:130},
   {h:'Orig. Opening DT',k:'orig_open',c:C.gold,w:110,fmt:'d'},
-  {h:'FA Expiration',k:'fa_exp',c:C.gold,w:100,fmt:'d'},
+  {h:'FA Expiration',k:'fa_exp_mds',c:C.gold,w:100,fmt:'d'},
   {h:'Latest F2F Date',k:'f2f',c:C.gold,w:110,fmt:'d'},
   {h:'Renovation Due Date',k:'reno_date',c:C.gold,w:110,fmt:'d'},
   {h:'Renovation Scope',k:'reno_scope',c:C.gold,w:140},
@@ -471,6 +471,7 @@ const COL_SRC = {
   strategy_owner:    'Alignment file — Strategy Owner',
   orig_open:         'MDS Overview — Orig. Opening DT (col 13)',
   fa_exp:            'Agreement View — _Agreement Expiration Date (Active/Finalized agreement)',
+  fa_exp_mds:        'MDS Overview — FA Expiration (col L), matched on PLK# (col A)',
   f2f:               'Agreement View — Effective Date of most recent Inactive Status Reason: F to F',
   reno_date:         'Smartsheet — Renovation Due Date (live connection)',
   reno_scope:        'Smartsheet — Initial Renovation Scope (live connection)',
@@ -1022,6 +1023,7 @@ function handleUpload(id, inp){
           {key:'fg',             terms:['franchise group name']},
           {key:'fg_num',         terms:['franchise group#','franchise group #','franchise group number']},
           {key:'fa_exp',         terms:['fa expiration','fa exp']},
+          {key:'fa_exp_mds',     terms:['fa expiration','fa exp']}, // dedicated MSF "FA Expiration" column
           {key:'orig_open',      terms:['orig. opening dt','orig opening dt','original opening','orig. open']},
           {key:'address',        terms:['physicaladdress_streetaddressline1','street address','address']},
           {key:'city',           terms:['physicaladdress_city','city']},
@@ -1037,7 +1039,7 @@ function handleUpload(id, inp){
           {key:'ext_image',      terms:['exterior iamge type','exterior image type','ext image']},
         ]);
         if(cm.plk==null){ log('[MDS scan] PLK# column not found'); return; }
-        const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',fa_exp:'date',orig_open:'date'};
+        const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
         // Parse MDS rows into a map keyed by PLK
         const mdsMap={};
         for(let r=hr+1;r<aoa.length;r++){
@@ -1064,11 +1066,12 @@ function handleUpload(id, inp){
 
         // Save MDS-only snap to its own dedicated key (~900 KB)
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
-        // Roy% / AdFund%: MDS Overview is authoritative — when those columns are present in the file,
-        // store the value even when blank (as null) so a store that was once a # and is now blank
-        // also clears on reload (and a once-blank store that now has a # picks it up).
-        const royCol=cm.royalty!=null, adfCol=cm.adfund!=null;
-        const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)) o[k]=null; }); return o; });
+        // Roy% / AdFund% / FA Expiration: MDS Overview is authoritative — when those columns are
+        // present in the file, store the value even when blank (as null) so a store that was
+        // once set and is now blank also clears on reload (and a once-blank store that now has
+        // a value picks it up).
+        const royCol=cm.royalty!=null, adfCol=cm.adfund!=null, faExpMdsCol=cm.fa_exp_mds!=null;
+        const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)) o[k]=null; }); return o; });
         try{
           const j=JSON.stringify({sr:mdsSnap,savedAt});
           localStorage.setItem(LS_SNAP_MDS_KEY,j);
@@ -1084,7 +1087,7 @@ function handleUpload(id, inp){
           const srMap={}; SR.forEach(s=>{srMap[s.plk]=s;});
           Object.values(mdsMap).forEach(mds=>{
             const s=srMap[mds.plk]; if(!s) return;
-            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)) s[k]=null; });
+            MDS_SNAP_KEYS.forEach(k=>{ if(mds[k]!=null) s[k]=mds[k]; else if((k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)) s[k]=null; });
             if(s.drive_thru_type) s.drive_thru_type=normalizeDriveThruType(s.drive_thru_type);
           });
           calculateFields();
@@ -2814,6 +2817,7 @@ async function parseMDS(file){
     {key:'fg_num',         terms:['franchise group#','franchise group #','franchise group number']},           // col J
     {key:'status',         terms:['status']},                                                                 // col K
     {key:'fa_exp',         terms:['fa expiration','fa exp']},                                                 // col L
+    {key:'fa_exp_mds',     terms:['fa expiration','fa exp']},                                                 // col L — dedicated MSF "FA Expiration" column; independent of Agreement View's fa_exp
     {key:'orig_open',      terms:['orig. opening dt','orig opening dt','original opening','orig. open']},     // col M
     {key:'address',        terms:['physicaladdress_streetaddressline1','street address','address']},           // col O
     {key:'city',           terms:['physicaladdress_city','city']},                                            // col P
@@ -2831,7 +2835,7 @@ async function parseMDS(file){
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
   const plkCol=cm.plk; if(plkCol==null){log('⚠ MDS: PLK# column not found'); return;}
   const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',
-              fa_exp:'date',orig_open:'date'};
+              fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
   let n=0;
   for(let r=hr+1;r<aoa.length;r++){
     const row=aoa[r]; if(!row||row[plkCol]==null) continue;
@@ -4654,9 +4658,11 @@ const ALIGN_SNAP_KEYS=new Set([
   'plk','country','status','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open',
 ]);
 const MDS_SNAP_KEYS=new Set([
-  // orig_open covered by align snap; fa_exp covered by agree snap — omitted to save space
+  // orig_open covered by align snap; fa_exp covered by agree snap — omitted to save space.
+  // fa_exp_mds is a separate, dedicated field for the MSF "FA Expiration" column (MDS Overview
+  // col L only) — independent of fa_exp/Agreement View, which is untouched.
   'plk','fru','op','fg','fg_num','address','city','state','county','postal',
-  'drive_thru_type','arch_type','lat','lon','royalty','adfund','ext_image',
+  'drive_thru_type','arch_type','lat','lon','royalty','adfund','ext_image','fa_exp_mds',
 ]);
 const MP_SNAP_KEYS   =new Set(['plk','subcluster','mp_pop','urb']);
 const DEAL_SNAP_KEYS =new Set(['plk','deal_type']);
@@ -4720,7 +4726,9 @@ async function saveState(){
 
   // ── 1. Per-source snaps (small — each only its own fields) ─────────────────
   _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap');
-  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap');
+  // forceKeys: fa_exp_mds is written explicitly (even as null) so a store that goes blank for
+  // FA Expiration in MDS Overview clears fully after a full Generate too, not just the quick scan.
+  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds']));
   // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
   // drops out of the Market Planning file — or whose value there goes blank — clears fully,
   // with no stale value surviving a reload.
