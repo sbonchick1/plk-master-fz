@@ -4561,8 +4561,14 @@ function exportExcel(){
 // FSS / Operations, Service Mode, and Digital come from live Snowflake endpoints
 // that re-fetch on every page load — no need to persist them here.
 const PERSIST_KEYS=[
-  // P&L (ebitda_monthly/net_sales_monthly/cur_rent/cur_rent_pct) now comes from the live
-  // /api/profitability pull (loadProfitability) — re-fetched every load, so NOT persisted here.
+  // ebitda_monthly/net_sales_monthly/cur_rent/cur_rent_pct: for FRANCHISEE stores these are
+  // re-fetched live every load via /api/profitability (loadProfitability), so persisting them
+  // is redundant but harmless (the live pull overwrites them immediately). For COMPANY stores,
+  // applyProfitability() deliberately skips them — their values come only from OneStream's
+  // "Total Company EBITDA" tab (a manual, occasional upload) — so these fields MUST persist,
+  // or company EBITDA disappears (dashes, 0 store months) on every reload until the next
+  // full Generate with OneStream re-uploaded.
+  'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',
   'monthly_sales','ms_prev',                                       // OneStream sales (uploaded)
   'sss_cy','sss_py','sst_cy','sst_py',                             // OneStream raw CY/PY comp (uploaded) — for exact FZ SUMIF/SUMIF
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',            // OneStream SSS/SST/Traffic (uploaded) — used for MSF per-store display
