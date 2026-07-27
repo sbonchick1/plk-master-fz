@@ -1080,9 +1080,11 @@ function handleUpload(id, inp){
         // franchisee listed must not keep showing the prior franchisee's name. Status is now
         // MDS Overview-sourced exclusively (Alignment no longer sets it).
         const royCol=cm.royalty!=null, adfCol=cm.adfund!=null, faExpMdsCol=cm.fa_exp_mds!=null,
-              fruCol=cm.fru!=null, opCol=cm.op!=null, fgCol=cm.fg!=null, statusCol=cm.status!=null;
+              fruCol=cm.fru!=null, opCol=cm.op!=null, fgCol=cm.fg!=null, statusCol=cm.status!=null,
+              fgNumCol=cm.fg_num!=null;
         const forceNull=k=>(k==='royalty'&&royCol)||(k==='adfund'&&adfCol)||(k==='fa_exp_mds'&&faExpMdsCol)
-                          ||(k==='fru'&&fruCol)||(k==='op'&&opCol)||(k==='fg'&&fgCol)||(k==='status'&&statusCol);
+                          ||(k==='fru'&&fruCol)||(k==='op'&&opCol)||(k==='fg'&&fgCol)||(k==='status'&&statusCol)
+                          ||(k==='fg_num'&&fgNumCol);
         const mdsSnap=Object.values(mdsMap).map(s=>{ const o={}; MDS_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; else if(forceNull(k)) o[k]=null; }); return o; });
         try{
           const j=JSON.stringify({sr:mdsSnap,savedAt});
@@ -4784,7 +4786,7 @@ async function saveState(){
   // full Generate too, not just the quick scan (otherwise the prior franchisee's name/FRU could
   // resurface on the next reload). status is included since MDS Overview (not Alignment) is now
   // its sole source.
-  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg','status']));
+  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg','status','fg_num']));
   // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
   // drops out of the Market Planning file — or whose value there goes blank — clears fully,
   // with no stale value surviving a reload.
