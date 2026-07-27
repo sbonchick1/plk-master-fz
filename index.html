@@ -921,7 +921,7 @@ function handleUpload(id, inp){
         if(cm.plk==null){ log('[Align scan] rest_no column not found'); return; }
         const VALID_STATUS =new Set(['open','temp closed','temp. closed','temporarily closed','temporary closed']);
         const VALID_COUNTRY=new Set(['us','usa','united states','ca','can','canada']);
-        const fmts={};
+        const fmts={dma_id:'num'};
         const seen=new Set(); const newStores=[];
         for(let r=hr+1;r<aoa.length;r++){
           const row=aoa[r]; if(!row||row[cm.plk]==null) continue;
@@ -1045,7 +1045,7 @@ function handleUpload(id, inp){
           {key:'ext_image',      terms:['exterior iamge type','exterior image type','ext image']},
         ]);
         if(cm.plk==null){ log('[MDS scan] PLK# column not found'); return; }
-        const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
+        const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',postal:'num',fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
         // Parse MDS rows into a map keyed by PLK
         const mdsMap={};
         for(let r=hr+1;r<aoa.length;r++){
@@ -2557,7 +2557,7 @@ async function parseAlignment(file){
     {key:'align_fru',     terms:['report_unit_nm','reporting unit','franchise reporting unit']}, // col AQ — used for F2F col AA per Excel formula
   ]);
   const plkCol=cm.plk; if(plkCol==null){log('⚠ Alignment: PLK# column not found'); return;}
-  const fmts={};
+  const fmts={dma_id:'num'};
 
   // Valid filter values
   const VALID_STATUS  =new Set(['open','temp closed','temp. closed','temporarily closed','temporary closed']);
@@ -2847,7 +2847,7 @@ async function parseMDS(file){
   ]);
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
   const plkCol=cm.plk; if(plkCol==null){log('⚠ MDS: PLK# column not found'); return;}
-  const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',
+  const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',postal:'num',
               fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
   let n=0;
   for(let r=hr+1;r<aoa.length;r++){
