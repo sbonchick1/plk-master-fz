@@ -1394,9 +1394,14 @@ function handleUpload(id, inp){
           const bestRow=activeRow||finalizedRow;
           if(bestRow&&fa_expCol!=null){ const fd=fmtD(bestRow[fa_expCol]); if(fd!=='-') faExp=fd; }
           if(!faExp&&fa_expCol!=null){ rows.forEach(row=>{ const dk=dateKey(row[fa_expCol]); if(dk!=null&&dk>faExpKey){ faExpKey=dk; const fd=fmtD(row[fa_expCol]); if(fd!=='-') faExp=fd; } }); }
-          if(latestF2F||faExp) agreeMap[plk]={plk,...(latestF2F?{f2f:latestF2F}:{}),...(faExp?{fa_exp:faExp}:{})};
+          // Always record an entry for every store with rows in this file — even when latestF2F
+          // is null — so a store whose F2F date is no longer computed (e.g. no qualifying
+          // transfer this month) clears explicitly instead of the snapshot simply omitting it
+          // (which would let an old F2F date resurface on the next reload). Does not change the
+          // F2F/FA-exp computation above in any way — only how the result gets recorded.
+          agreeMap[plk]={plk, f2f:latestF2F, fa_exp:faExp};
         });
-        const agreeSnap=Object.values(agreeMap).map(s=>{ const o={}; AGREE_SNAP_KEYS.forEach(k=>{ if(s[k]!=null) o[k]=s[k]; }); return o; });
+        const agreeSnap=Object.values(agreeMap).map(s=>{ const o={}; AGREE_SNAP_KEYS.forEach(k=>{ o[k]=k==='plk'?s[k]:(s[k]!=null?s[k]:null); }); return o; });
         if(agreeSnap.length===0){ log('[Agree scan] No data parsed'); return; }
         const savedAt=new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'});
         try{
@@ -4803,7 +4808,12 @@ async function saveState(){
   _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap', new Set(['subcluster','mp_pop','urb']));
   _writeSnap(LS_SNAP_DEAL_KEY,  DEAL_SNAP_KEYS,  'Deal snap');
   _writeSnap(LS_SNAP_DEV_KEY,   DEV_SNAP_KEYS,   'DevAlign snap');
-  _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap');
+  // forceKeys: f2f is written explicitly (even as null) so a store whose F2F date is no longer
+  // computed (e.g. no qualifying transfer this month, or the store isn't in this month's
+  // Agreement View at all) clears fully after a full Generate too, not just the quick scan.
+  // parseAgree() has already resolved the correct current f2f for every store by this point —
+  // the F2F computation itself is untouched, only how the result persists.
+  _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap', new Set(['f2f']));
   _writeSnap(LS_SNAP_PY_KEY,    PY_SNAP_KEYS,    'PY snap');
 
   // NOTE: FG snap (plk_snap_fg_v1) is written only by the FG background scan on file
