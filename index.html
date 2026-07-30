@@ -2697,9 +2697,11 @@ async function parsePY(file){
   // This ensures _writeSnap captures them on Generate (parsePY only runs in-session;
   // without this, fy2021..fy2025 stay null in SR and get wiped from the PY snap on save).
   const srMap_py={}; SR.forEach(s=>{ srMap_py[s.plk]=s; });
+  const foundInPY=new Set();
   for(let r=dr;r<aoa.length;r++){
     const row=aoa[r]; if(!row||row[0]==null) continue;
     const plk=parseInt(row[0]); if(isNaN(plk)||plk<=0) continue;
+    foundInPY.add(plk);
     const obj={};
     yrCols.forEach(({c,k})=>{
       const v=row[c];
@@ -2713,6 +2715,17 @@ async function parsePY(file){
     if(srStore){ yrCols.forEach(({k})=>{ srStore[k]=obj[k]; }); }
     n++;
   }
+  // Clear stale fy figures for any store no longer in this PY Sales file — otherwise a store
+  // that drops out (closed, or excluded from this export) keeps showing a prior upload's values.
+  let nClearedPY=0;
+  SR.forEach(s=>{
+    if(!foundInPY.has(s.plk) && (s.fy2021!=null||s.fy2022!=null||s.fy2023!=null||s.fy2024!=null||s.fy2025!=null)){
+      s.fy2021=null; s.fy2022=null; s.fy2023=null; s.fy2024=null; s.fy2025=null;
+      delete PY[String(s.plk)];
+      nClearedPY++;
+    }
+  });
+  if(nClearedPY>0) log('  PY Sales: cleared stale fy figures for '+nClearedPY+' store(s) not in this file');
   const yrs=yrCols.map(({k})=>k).join(', ');
   log('✓ PY Sales: '+n+' stores updated ('+yrs+')');
 }
@@ -3677,6 +3690,11 @@ function calculateFields(){
       s.ttm_ars=vals.length>0?vals.reduce((a,b)=>a+b,0):null;
       s.ann_ars =(s.ttm_ars!=null&&s.store_months_sales>0)
                  ?s.ttm_ars/s.store_months_sales*12:null;
+    } else {
+      // No monthly sales (store dropped out of this month's OneStream export) → blank ARS.
+      // Without this, a store that stops reporting keeps a STALE Annualized/TTM ARS from a
+      // prior period, which also skews sysAvgArs (and therefore every FRU/DMA's ARS Index).
+      s.store_months_sales=0; s.ttm_ars=null; s.ann_ars=null;
     }
 
     if(!s.ebitda_monthly||!s.ebitda_monthly.length) s.store_months_ebitda=0;
@@ -4845,20 +4863,23 @@ async function saveState(){
   // resurface on the next reload). status is included since MDS Overview (not Alignment) is now
   // its sole source.
   _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg','status','fg_num','postal',
-    'address','city','state','county','drive_thru_type','arch_type','lat','lon','ext_image']));
+    'address','city','state','county','drive_thru_type','arch_type','lat','lon','ext_image','royalty','adfund']));
   // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
   // drops out of the Market Planning file — or whose value there goes blank — clears fully,
   // with no stale value surviving a reload.
   _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap', new Set(['subcluster','mp_pop','urb']));
   _writeSnap(LS_SNAP_DEAL_KEY,  DEAL_SNAP_KEYS,  'Deal snap');
   _writeSnap(LS_SNAP_DEV_KEY,   DEV_SNAP_KEYS,   'DevAlign snap');
-  // forceKeys: f2f is written explicitly (even as null) so a store whose F2F date is no longer
-  // computed (e.g. no qualifying transfer this month, or the store isn't in this month's
-  // Agreement View at all) clears fully after a full Generate too, not just the quick scan.
-  // parseAgree() has already resolved the correct current f2f for every store by this point —
-  // the F2F computation itself is untouched, only how the result persists.
-  _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap', new Set(['f2f']));
-  _writeSnap(LS_SNAP_PY_KEY,    PY_SNAP_KEYS,    'PY snap');
+  // forceKeys: f2f/fa_exp are written explicitly (even as null) so a store whose F2F date/FA
+  // expiration is no longer computed (e.g. no qualifying transfer this month, or the store
+  // isn't in this month's Agreement View at all) clears fully after a full Generate too, not
+  // just the quick scan. parseAgree() has already resolved the correct current f2f/fa_exp for
+  // every store by this point — the F2F computation itself is untouched, only how it persists.
+  _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap', new Set(['f2f','fa_exp']));
+  // forceKeys: fy2021-fy2025 are written explicitly (even as null) so a store that drops out
+  // of the PY Sales file clears fully after a full Generate too, not just leaving a prior
+  // upload's figures in place.
+  _writeSnap(LS_SNAP_PY_KEY,    PY_SNAP_KEYS,    'PY snap', new Set(['fy2021','fy2022','fy2023','fy2024','fy2025']));
 
   // NOTE: FG snap (plk_snap_fg_v1) is written only by the FG background scan on file
   // upload — not here. After Generate, fg + op are already embedded in the MDS snap.
