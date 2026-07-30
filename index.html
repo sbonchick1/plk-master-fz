@@ -1045,7 +1045,9 @@ function handleUpload(id, inp){
           {key:'ext_image',      terms:['exterior iamge type','exterior image type','ext image']},
         ]);
         if(cm.plk==null){ log('[MDS scan] PLK# column not found'); return; }
-        const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',postal:'num',fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
+        // postal: plain string, NOT 'num' — Canadian postal codes are alphanumeric (e.g. "M6S 1N7")
+        // and parseNum() would return null for them (also silently drops US ZIP leading zeros).
+        const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
         // Parse MDS rows into a map keyed by PLK
         const mdsMap={};
         for(let r=hr+1;r<aoa.length;r++){
@@ -2863,7 +2865,9 @@ async function parseMDS(file){
   ]);
   const srMap={}; SR.forEach(s=>{ srMap[s.plk]=s; });
   const plkCol=cm.plk; if(plkCol==null){log('⚠ MDS: PLK# column not found'); return;}
-  const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',postal:'num',
+  // postal: plain string, NOT 'num' — Canadian postal codes are alphanumeric (e.g. "M6S 1N7")
+  // and parseNum() would return null for them (also silently drops US ZIP leading zeros).
+  const fmts={fg_num:'num',royalty:'pct',adfund:'pct',lat:'num',lon:'num',
               fa_exp:'date',fa_exp_mds:'date',orig_open:'date'};
   let n=0;
   for(let r=hr+1;r<aoa.length;r++){
