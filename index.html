@@ -3161,15 +3161,15 @@ async function parseAgree(file){
     // Master picks MAX(AC) across all rows for each restaurant.
     let latestF2F=null, latestF2FKey=-1;
     const storeFruNorm=s.align_fru?String(s.align_fru).trim().toLowerCase():null;
-    const isDebug=parseInt(plkStr)===13329;
-    if(isDebug) log('[DBG 13329] rows='+rows.length+' statuses=['+rows.map(r=>String(r[statusCol])).join('|')+'] storeFRU="'+storeFruNorm+'" (align_fru) | fgIdCol='+fgIdCol+' | hasFGMap='+hasFGMap);
+    const isDebug=parseInt(plkStr)===4678;
+    if(isDebug) log('[DBG 4678] storeFRU="'+storeFruNorm+'" (align_fru) | fgIdCol='+fgIdCol+' | hasFGMap='+hasFGMap);
 
     rows.forEach(row=>{
       if(String(row[statusCol]||'').trim().toLowerCase()!=='finalized') return;
       const seller=getSeller(row);
       const sellerNorm=seller?seller.trim().toLowerCase():null;
       const q2=dateKey(row[effectiveCol]);
-      if(isDebug) log('[DBG 13329] eff='+fmtD(row[effectiveCol])+' fgId='+(fgIdCol!=null?row[fgIdCol]:'n/a')+' seller="'+(seller||'null')+'" storeFRU="'+storeFruNorm+'" equal='+(sellerNorm===storeFruNorm));
+      if(isDebug) log('[DBG 4678] eff='+fmtD(row[effectiveCol])+' fgId='+(fgIdCol!=null?row[fgIdCol]:'n/a')+' seller="'+(seller||'null')+'" storeFRU="'+storeFruNorm+'" equal='+(sellerNorm===storeFruNorm));
       // Excel: AND(B="Finalized", AA<>AB). null/empty treated as "" for comparison.
       // null != "Carrols" → qualifies. "Carrols" == "Carrols" → skip.
       if((storeFruNorm||'')===(sellerNorm||'')) return;  // AA=AB — no transfer
@@ -3194,7 +3194,6 @@ async function parseAgree(file){
       }
     });
     s.f2f=latestF2F; if(latestF2F) f2fSet++;  // always assign — clears stale snap value when no date
-    if(isDebug) log('[DBG 13329] final s.f2f='+s.f2f);
 
     // FA Expiration: prefer Active agreement, then Finalized, then most-recent date
     let faExp=null, faExpKey=-1;
@@ -3580,6 +3579,16 @@ function calculateFields(){
     const isCompany=(s.fru&&String(s.fru).toLowerCase().includes('plk company'))||
                     (s.div&&String(s.div).toLowerCase().includes('plk company'));
     if(isCompany){ s.fru='Company'; s.op='Company'; s.fg='Company'; }
+
+    // Company royalty/ad fund override by Alignment region code (col Q REGION_NM,
+    // e.g. "Company Region - 701" → trailing number is the region code).
+    // MDS Overview doesn't carry a real Roy%/Adf% for company-owned stores, so these
+    // regions get a fixed rate instead of whatever (blank) MDS provides.
+    // Regions 601/701/801 → 4.6% royalty, 0.5% ad fund. Region 901 → 4.6% royalty, 0% ad fund.
+    const regionMatch=String(s.div||'').match(/(\d+)\s*$/);
+    const regionCode=regionMatch?regionMatch[1]:'';
+    if(regionCode==='601'||regionCode==='701'||regionCode==='801'){ s.royalty=4.6; s.adfund=0.5; }
+    else if(regionCode==='901'){ s.royalty=4.6; s.adfund=0; }
 
     // Normalize: convert 0→null in monthly data arrays.
     // Stale SR_DEFAULT data can have 0s for missing months; OneStream "Display no Data as Zero"
