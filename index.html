@@ -3817,18 +3817,13 @@ function buildFR(){
     // E: Division — "Multiple" when FRU spans >1 division (backend: UNIQUE check)
     const div=g.divSet.size>1?'Multiple':[...g.divSet][0]||'';
     // G: 2026 Openings — COUNTIFS(orig_open>=1/1/2026, orig_open<=12/31/2026, FRU=$B6)
-    // s.orig_open is stored as 'MM/DD/YYYY' by fmtD(); extract year from last 4 chars of that format.
-    // Also handles YYYY-MM-DD (ISO) in case a value bypassed fmtD.
+    // s.orig_open is usually a 'MM/DD/YYYY' string (via fmtD()), but pre-loaded/cached data can
+    // carry it as a native Date object instead — run through fmtD() first so both are handled.
     const open26=ss.filter(s=>{
       if(!s.orig_open) return false;
-      const d=String(s.orig_open).trim();
-      const mdy=d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(mdy) return mdy[3]==='2026';
-      const ymd=d.match(/^(\d{4})-(\d{2})-(\d{2})/); if(ymd) return ymd[1]==='2026';
-      return false;
+      const fd=fmtD(s.orig_open);
+      return fd!=='-'&&fd.slice(-4)==='2026';
     }).length;
-    if(/parikh/i.test(g.fru||'')){
-      log('[DBG Parikh] fru="'+g.fru+'" storeCount='+n+' open26='+open26+' plks=['+ss.map(s=>s.plk+':'+(s.orig_open||'null')).join(', ')+']');
-    }
     // H: DMA Count — COUNT(UNIQUE(FILTER(MSF DMA col H, FRU=$B6)))
     const dmas=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:(s.dma||'')).filter(Boolean));
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
@@ -3929,12 +3924,12 @@ function buildDR(){
     // F: # of Franchisees — COUNT(UNIQUE(FILTER(MSF FRU col D, DMA ID=$B6)))
     const frus=new Set(ss.map(s=>s.fru).filter(Boolean));
     // G: 2026 Openings — COUNTIFS(orig_open in 2026, DMA ID=$B6)
+    // s.orig_open is usually a 'MM/DD/YYYY' string (via fmtD()), but pre-loaded/cached data can
+    // carry it as a native Date object instead — run through fmtD() first so both are handled.
     const open26=ss.filter(s=>{
       if(!s.orig_open) return false;
-      const d=String(s.orig_open).trim();
-      const mdy=d.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/); if(mdy) return mdy[3]==='2026';
-      const ymd=d.match(/^(\d{4})-(\d{2})-(\d{2})/); if(ymd) return ymd[1]==='2026';
-      return false;
+      const fd=fmtD(s.orig_open);
+      return fd!=='-'&&fd.slice(-4)==='2026';
     }).length;
     // H: Annualized ARS — AVERAGEIF(MSF!$I:$I, $B6, MSF!$AJ:$AJ)
     // Use avg() (null-excluding, matches AVERAGEIF) — no >0 guard for consistency.
