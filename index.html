@@ -3356,11 +3356,13 @@ async function parseOneStream(file){
             log('  First data row (cols A-F): '+JSON.stringify(_dbgRow.slice(0,6)));
             if(tr) log('  First data row monthly cols (startCol='+tr.startCol+'): '+JSON.stringify(_dbgRow.slice(tr.startCol,tr.startCol+6)));
           }
+          const foundInOneStream=new Set();
           if(tr&&dr>=0){
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row||row[0]==null) continue;
               const plk=parseInt(row[0]); if(isNaN(plk)||!srMap[plk]) continue;
               const s=srMap[plk];
+              foundInOneStream.add(plk);
               // Always re-initialize to correct size — clears any stale embedded data
               // (monthly_sales is ONLY sourced from this parser)
               // Use LAST occurrence of each month label — the correct TotalMarketSales_FZ
@@ -3389,6 +3391,17 @@ async function parseOneStream(file){
               s.sst_py=parseNum(row[101]);
               nSales++;
             }
+            // Clear stale monthly sales / raw CY-PY comp for any store no longer present in
+            // this OneStream export (e.g. closed/reclassified) — otherwise a store that drops
+            // out of the file keeps showing last month's figures indefinitely.
+            let nClearedOneStream=0;
+            SR.forEach(s=>{
+              if(!foundInOneStream.has(s.plk) && (s.monthly_sales!=null||s.ms_prev!=null||s.sss_cy!=null||s.sss_py!=null||s.sst_cy!=null||s.sst_py!=null)){
+                s.monthly_sales=null; s.ms_prev=null; s.sss_cy=null; s.sss_py=null; s.sst_cy=null; s.sst_py=null;
+                nClearedOneStream++;
+              }
+            });
+            if(nClearedOneStream>0) log('  OneStream sheet: cleared stale monthly sales/CY-PY comp for '+nClearedOneStream+' store(s) not in this file');
           }
           log('  OneStream sheet: '+nSales+' stores updated (monthly sales + raw CY/PY comp)');
         }
@@ -3421,6 +3434,7 @@ async function parseOneStream(file){
             // Helper: treat 0 as null (OneStream "Display no Data as Zero")
             const fp=v=>{const n=parsePct(v);return (n===0||n===null)?null:n;};
             const fn=v=>{const n=parseNum(v);return (n===0||n===null)?null:n;};
+            const foundInSSSST=new Set(), foundInTickets=new Set();
             for(let r=dr;r<aoa.length;r++){
               const row=aoa[r]; if(!row) continue;
               // SSS / SST / monthly tickets — match on col D PLK#
@@ -3428,6 +3442,7 @@ async function parseOneStream(file){
                 const plk=parseInt(row[3]);
                 if(!isNaN(plk)&&plk>0&&srMap[plk]){
                   const s=srMap[plk];
+                  foundInSSSST.add(plk);
                   s.sss_mo    =fp(row[5]);   // col F: Monthly SSS
                   s.sss       =fp(row[6]);   // col G: YTD SSS
                   s.sst_mo    =fp(row[7]);   // col H: Monthly SST
@@ -3440,11 +3455,25 @@ async function parseOneStream(file){
               if(row[0]!=null){
                 const plk=parseInt(row[0]);
                 if(!isNaN(plk)&&plk>0&&srMap[plk]){
+                  foundInTickets.add(plk);
                   const v=fn(row[24]);       // col Y: YTD Avg. Tickets
-                  if(v!=null) srMap[plk].tickets=v;
+                  srMap[plk].tickets=v;      // always assign (incl. null) — clears stale value when no longer reported
                 }
               }
             }
+            // Clear stale SSS/SST/tickets for any store no longer present in this month's
+            // SSS&SST export (e.g. company store now flat / dropped from comp-sales reporting)
+            // — otherwise it keeps showing a prior month's non-zero figure indefinitely.
+            let nClearedSSSST=0, nClearedTickets=0;
+            SR.forEach(s=>{
+              if(!foundInSSSST.has(s.plk) && (s.sss_mo!=null||s.sss!=null||s.sst_mo!=null||s.sst!=null||s.tickets_mo!=null)){
+                s.sss_mo=null; s.sss=null; s.sst_mo=null; s.sst=null; s.tickets_mo=null;
+                nClearedSSSST++;
+              }
+              if(!foundInTickets.has(s.plk) && s.tickets!=null){ s.tickets=null; nClearedTickets++; }
+            });
+            if(nClearedSSSST>0)  log('  SSS&SST sheet: cleared stale SSS/SST for '+nClearedSSSST+' store(s) not in this file');
+            if(nClearedTickets>0) log('  SSS&SST sheet: cleared stale YTD Avg Tickets for '+nClearedTickets+' store(s) not in this file');
           }
           // Diagnostic: show first matched store values
           const _dbgS=SR.find(s=>s.sss!=null||s.sst!=null||s.tickets!=null);
@@ -3797,6 +3826,9 @@ function buildFR(){
       const ymd=d.match(/^(\d{4})-(\d{2})-(\d{2})/); if(ymd) return ymd[1]==='2026';
       return false;
     }).length;
+    if(/parikh/i.test(g.fru||'')){
+      log('[DBG Parikh] fru="'+g.fru+'" storeCount='+n+' open26='+open26+' plks=['+ss.map(s=>s.plk+':'+(s.orig_open||'null')).join(', ')+']');
+    }
     // H: DMA Count — COUNT(UNIQUE(FILTER(MSF DMA col H, FRU=$B6)))
     const dmas=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:(s.dma||'')).filter(Boolean));
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
@@ -4663,11 +4695,14 @@ function _saveDeltaToLS(){
   let existingDelta={};
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) existingDelta=JSON.parse(raw); }catch(e){}
 
-  // These 4 must NOT inherit a stale value from the previous delta when the current in-memory
+  // These must NOT inherit a stale value from the previous delta when the current in-memory
   // value is null — e.g. a company store cleared of pre-acquisition franchisee EBITDA (see
-  // parseOneStream's Total Company EBITDA section) must stay cleared on reload, not have the
-  // old value silently restored by the merge-with-previous logic below.
-  const FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct']);
+  // parseOneStream's Total Company EBITDA section), or a store that dropped out of this
+  // month's OneStream/SSS&SST export (see parseOneStream's stale-clear blocks) — must stay
+  // cleared on reload, not have the old value silently restored by the merge-with-previous
+  // logic below.
+  const FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',
+    'monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']);
 
   const delta={
     savedAt:new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
@@ -4830,6 +4865,12 @@ async function saveState(){
   // upload — not here. After Generate, fg + op are already embedded in the MDS snap.
 
   // ── 2. Financial delta (P&L + OneStream — written LAST, largest item) ──────
+  // forceKeys: OneStream-sourced fields are written explicitly (even as null) so a store that
+  // drops out of this month's OneStream/SSS&SST export (see parseOneStream's stale-clear
+  // blocks) clears fully on reload too — otherwise the omitted key would leave whatever value
+  // was baked into the SR_DEFAULT baseline from an earlier Generate untouched.
+  const DELTA_FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',
+    'monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']);
   const delta={savedAt};
   let nStores=0;
   SR.forEach(s=>{
@@ -4837,6 +4878,7 @@ async function saveState(){
     PERSIST_KEYS.forEach(k=>{
       const v=s[k];
       if(v!=null) d[k]=v;
+      else if(DELTA_FORCE_NULL_KEYS.has(k)) d[k]=null;
     });
     if(Object.keys(d).length>0){ delta[s.plk]=d; nStores++; }
   });
