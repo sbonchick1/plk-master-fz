@@ -348,8 +348,8 @@ const M_COLS = [
   {h:'Trailing 12M EBITDA',k:'ttm_ebitda',c:C.darkorange,w:120,fmt:'$'},
   {h:'Annualized EBITDA',k:'ann_ebitda',c:C.darkorange,w:110,fmt:'$'},
   {h:'Annualized EBITDA %',k:'ann_ebitda_pct',c:C.darkorange,w:110,fmt:'%'},
-  {h:'Current Month Rent ($)',k:'cur_rent',c:C.darkorange,w:120,fmt:'$'},
-  {h:'Current Month Rent %',k:'cur_rent_pct',c:C.darkorange,w:110,fmt:'%'},
+  {h:'Trailing 12M Rent $',k:'cur_rent',c:C.darkorange,w:120,fmt:'$'},
+  {h:'Trailing 12M Rent %',k:'cur_rent_pct',c:C.darkorange,w:110,fmt:'%'},
   {h:'Store Months',k:'store_months_ebitda',c:C.darkorange,w:80},
   {h:'YTD SSS',k:'sss',c:C.orange,w:70,fmt:'%+'},
   {h:'YTD SST',k:'sst',c:C.orange,w:70,fmt:'%+'},
@@ -431,8 +431,8 @@ const COL_SRC = {
   ttm_ebitda:        'Calculated — sum of trailing 12 monthly EBITDA (OneStream)',
   ann_ebitda:        'Calculated — TTM EBITDA ÷ store months × 12',
   ann_ebitda_pct:    'Calculated — Annualized EBITDA ÷ Annualized ARS',
-  cur_rent:          'P&L Crosstab — Rent row, most recent non-null value within EBITDA window (capped at last EBITDA month)',
-  cur_rent_pct:      'P&L Crosstab — Rent % row, most recent non-null value within EBITDA window (capped at last EBITDA month)',
+  cur_rent:          'Live Profitability pull — sum of monthly Rent across the same trailing-12-month EBITDA window',
+  cur_rent_pct:      'Calculated — Trailing 12M Rent ÷ Trailing 12M Net Sales, same window as EBITDA',
   store_months_ebitda:'Calculated — count of non-null EBITDA months',
   // Sales / Traffic Comps
   sss:               'OneStream — SSS&SST tab, col G (YTD Same Store Sales vs PY)',
@@ -649,8 +649,8 @@ const CA_COLS = [
   // Monthly Profitability (12 EBITDA + 6 summary = 18)
   ...EBITDA_MONTHS.map(m=>({h:m,c:C.darkorange,w:80,fmt:'$'})),
   {h:'Trailing 12M EBITDA',c:C.darkorange,w:120,fmt:'$'},{h:'Annualized EBITDA',c:C.darkorange,w:110,fmt:'$'},
-  {h:'Annualized EBITDA %',c:C.darkorange,w:110,fmt:'%'},{h:'Current Month Rent ($)',c:C.darkorange,w:120,fmt:'$'},
-  {h:'Current Month Rent %',c:C.darkorange,w:110,fmt:'%'},{h:'Store Months',c:C.darkorange,w:80},
+  {h:'Annualized EBITDA %',c:C.darkorange,w:110,fmt:'%'},{h:'Trailing 12M Rent $',c:C.darkorange,w:120,fmt:'$'},
+  {h:'Trailing 12M Rent %',c:C.darkorange,w:110,fmt:'%'},{h:'Store Months',c:C.darkorange,w:80},
   // Sales / Traffic Comps (6)
   {h:'YTD SSS',c:C.orange,w:70,fmt:'%+'},{h:'YTD SST',c:C.orange,w:70,fmt:'%+'},
   {h:'YTD Avg. Tickets',c:C.orange,w:100,fmt:'#'},{h:'Monthly SSS',c:C.orange,w:80,fmt:'%+'},
@@ -1759,13 +1759,14 @@ async function loadDigital(){
 window._profRaw=null;
 // Map the cached pull onto the CURRENT config-driven EBITDA_MONTHS window (which ends one month
 // before the selected file month). A newer month present in the pull (e.g. June while building the
-// June file) has no slot in the window and is simply dropped. Rent/Rent% = the last window month.
+// June file) has no slot in the window and is simply dropped. Rent $/% are trailing-12-month
+// figures over that same window (sum of monthly Rent; % = TTM Rent ÷ TTM Net Sales) — NOT a
+// single "current month" snapshot, so they move together with TTM/Annualized EBITDA.
 // Company stores are skipped — their EBITDA comes from the OneStream "Total Company EBITDA" tab,
 // not the P&L (mirrors the old upload's franchisee-only role).
 function applyProfitability(){
   if(!window._profRaw) return;
   const raw=window._profRaw;
-  const last=EBITDA_MONTHS[EBITDA_MONTHS.length-1];
   SR.forEach(s=>{
     const isCompany = s.fru==='Company' ||
       (s.fru && /plk company/i.test(s.fru)) || (s.div && /plk company/i.test(s.div));
@@ -1774,14 +1775,24 @@ function applyProfitability(){
     if(!bm){ // franchisee not in the P&L pull → no P&L this period (blank, never stale)
       s.ebitda_monthly   =new Array(EBITDA_MONTHS.length).fill(null);
       s.net_sales_monthly=new Array(EBITDA_MONTHS.length).fill(null);
+      s.rent_monthly     =new Array(EBITDA_MONTHS.length).fill(null);
       s.cur_rent=null; s.cur_rent_pct=null;
       return;
     }
     s.ebitda_monthly   =EBITDA_MONTHS.map(l=>(bm[l]&&bm[l].ebitda   !=null)?bm[l].ebitda   :null);
     s.net_sales_monthly=EBITDA_MONTHS.map(l=>(bm[l]&&bm[l].net_sales!=null)?bm[l].net_sales:null);
-    const lm=bm[last];
-    s.cur_rent    =(lm&&lm.rent    !=null)?lm.rent    :null;
-    s.cur_rent_pct=(lm&&lm.rent_pct!=null)?lm.rent_pct:null;
+    // rent_monthly: kept per-month (not just the TTM total) so the CA tab's CAD conversion can
+    // apply each month's own USD→CAD rate before summing, same precision as EBITDA/ARS, instead
+    // of applying one rate to the pre-summed total.
+    s.rent_monthly=EBITDA_MONTHS.map(l=>(bm[l]&&bm[l].rent!=null)?bm[l].rent:null);
+    let ttmRent=0,hasRent=false,ttmNS=0,hasNS=false;
+    EBITDA_MONTHS.forEach(l=>{
+      const rec=bm[l]; if(!rec) return;
+      if(rec.rent!=null){ ttmRent+=rec.rent; hasRent=true; }
+      if(rec.net_sales!=null){ ttmNS+=rec.net_sales; hasNS=true; }
+    });
+    s.cur_rent    =hasRent?ttmRent:null;
+    s.cur_rent_pct=(hasRent&&hasNS&&ttmNS>0)?ttmRent/ttmNS:null;
   });
   // Keep the tile's "showing thru" label in sync with the current window (fetch + Generate),
   // so it reflects the selected file month rather than being frozen at the first fetch.
@@ -2005,8 +2016,9 @@ function renderCARows(){
   const rows=caFilt.slice(caP*PG,(caP+1)*PG);
   // Convert each row USD→CAD for display (same logic as the export) so the on-screen
   // CA tab shows CAD, matching the manual file's "MSF value × FX rate" per-cell formula.
+  const rentMonthlyMap=_caRentMonthlyMap();
   document.getElementById('ca-tbody').innerHTML=rows.map(row=>{
-    const r=caConvertRow(row);
+    const r=caConvertRow(row,rentMonthlyMap);
     return '<tr>'+CA_COLS.map((col,i)=>{
       const v=caVal(r,i), fv=fmtVal(v,col.fmt);
       return '<td class="'+(isNeg(v)&&col.fmt?'neg':'')+'" title="'+String(fv).replace(/"/g,'&quot;')+'">'+fv+'</td>';
@@ -2096,14 +2108,17 @@ function fyRate(yr){ const v=(window.FX_ANNUAL||{})[yr]; return (v==null||isNaN(
 //   r[15..19]=FY2021-25  r[20]=ms_prev  r[21..32]=sales  r[33]=TTM ARS  r[34]=Ann ARS
 //   r[36..47]=EBITDA mo  r[48]=TTM EBITDA  r[49]=Ann EBITDA  r[50]=EBITDA%  r[51]=Rent$
 // Percentages / counts / FSS / dates are NOT converted (currency-agnostic), matching the manual.
-function caConvertRow(row){
+// Builds a plk → rent_monthly lookup once per render/export pass (not per-row) so caConvertRow
+// can convert Trailing 12M Rent$ month-by-month at each month's own rate, same precision as
+// EBITDA/ARS, instead of applying one rate to the pre-summed total.
+function _caRentMonthlyMap(){
+  const m=new Map(); SR.forEach(s=>{ if(s.rent_monthly) m.set(s.plk,s.rent_monthly); }); return m;
+}
+function caConvertRow(row,rentMonthlyMap){
   const r=row.slice();
   const fxS=window.FX_SALES, fxE=window.FX_EBITDA;
   if(!fxS||!fxE) return r; // FX not loaded → leave as USD
   const n=v=>(typeof v==='number'&&isFinite(v)?v:null);
-  // Current Month Rent$ converts at the LAST EBITDA month's USD→CAD rate (rent shown is the
-  // current/most-recent month, which aligns with the latest EBITDA month). Exact, last non-null.
-  const rentFx=(()=>{ for(let i=fxE.length-1;i>=0;i--){ if(fxE[i]!=null) return fxE[i]; } return null; })();
   // FY annual (r[15..19]) × exact treasury FY rate
   for(let y=0;y<5;y++){const rt=fyRate(2021+y);if(rt&&n(r[15+y])!=null)r[15+y]=r[15+y]*rt;}
   // ms_prev (r[20], Apr-25) × exact EBITDA_MONTHS[0] rate — display only, not summed into TTM ARS
@@ -2118,8 +2133,21 @@ function caConvertRow(row){
   if(smE>0){const annE=ttmE/smE*12; r[48]=ttmE; r[49]=annE;}
   // Annualized EBITDA % (r[50]) is a ratio — NOT a currency, so it is NOT converted.
   // It stays as the MSF value indexed in by buildCR (s.ann_ebitda_pct), matching the manual.
-  // Rent$ (r[51]) × last EBITDA month's exact rate
-  if(rentFx&&n(r[51])!=null) r[51]=r[51]*rentFx;
+  // Trailing 12M Rent$ (r[51]): convert each month's rent at that exact month's rate, then sum —
+  // same precision as EBITDA/ARS above. Falls back to the last-EBITDA-month rate applied to the
+  // pre-summed total when no monthly breakdown is available (e.g. company stores).
+  const rentMonthly=rentMonthlyMap&&rentMonthlyMap.get(row[1]);
+  if(rentMonthly){
+    let ttmR=0,hasR=false;
+    for(let i=0;i<EBITDA_MONTHS.length;i++){
+      const rt=fxE[i], v=rentMonthly[i];
+      if(rt&&v!=null){ ttmR+=v*rt; hasR=true; }
+    }
+    if(hasR) r[51]=ttmR;
+  } else {
+    const rentFx=(()=>{ for(let i=fxE.length-1;i>=0;i--){ if(fxE[i]!=null) return fxE[i]; } return null; })();
+    if(rentFx&&n(r[51])!=null) r[51]=r[51]*rentFx;
+  }
   return r;
 }
 // Populate/refresh the FX rates row from window.FX_SALES / FX_EBITDA / FX_ANNUAL
@@ -2127,7 +2155,7 @@ function refreshCaFxRow(){
   const ann=window.FX_ANNUAL||{};
   const fxS=window.FX_SALES||[];
   const fxE=window.FX_EBITDA||[];
-  // Rent$ rate = last EBITDA month's USD→CAD rate (rent is the current/most-recent month)
+  // Rent$ rate = last EBITDA month's USD→CAD rate (approximation — Rent$ is now a trailing-12M sum)
   const rentFx=(()=>{ for(let i=fxE.length-1;i>=0;i--){ if(fxE[i]!=null) return fxE[i]; } return null; })();
   const hasFX=fxS.some(v=>v!=null)||fxE.some(v=>v!=null)||Object.keys(ann).length>0;
   // Display rates at 3 decimals (DISPLAY ONLY — the conversion math uses the exact rate)
@@ -3538,8 +3566,8 @@ async function parseOneStream(file){
         SR.forEach(s=>{
           const isCompanyNow = s.fru==='Company' || (s.fru&&/plk company/i.test(s.fru)) || (s.div&&/plk company/i.test(s.div));
           if(isCompanyNow && !foundInCoEbitda.has(s.plk)){
-            if(s.ebitda_monthly!=null||s.net_sales_monthly!=null||s.cur_rent!=null||s.cur_rent_pct!=null) nClearedNewCompany++;
-            s.ebitda_monthly=null; s.net_sales_monthly=null; s.cur_rent=null; s.cur_rent_pct=null;
+            if(s.ebitda_monthly!=null||s.net_sales_monthly!=null||s.cur_rent!=null||s.cur_rent_pct!=null||s.rent_monthly!=null) nClearedNewCompany++;
+            s.ebitda_monthly=null; s.net_sales_monthly=null; s.cur_rent=null; s.cur_rent_pct=null; s.rent_monthly=null;
           }
         });
         if(nClearedNewCompany>0) log('  Total Company EBITDA: cleared stale pre-acquisition EBITDA for '+nClearedNewCompany+' company store(s) not yet in this tab');
@@ -4071,8 +4099,9 @@ function buildCaAOA(moLbl, dynSalesMo, dynEbitdaMo){
     return c.h;
   })));
   // Data rows — convert USD→CAD (shared with the live tab) then drop the leading spacer.
+  const rentMonthlyMap=_caRentMonthlyMap();
   CR.forEach(row=>{
-    const r=caConvertRow(row); // CAD copy (or USD copy if FX not loaded); does not mutate CR
+    const r=caConvertRow(row,rentMonthlyMap); // CAD copy (or USD copy if FX not loaded); does not mutate CR
     // CR rows: r[0] is the leading spacer; real data is r[1..] = CA_COLS[0..] (contiguous).
     const xv=v=>v==null?'-':(v==='NaT'||v==='nat'||v==='NaN'||v==='None'||v==='NULL'||v==='null'||v==='')?'-':v;
     const clean=r.slice(1).map(xv);
@@ -4663,7 +4692,7 @@ const PERSIST_KEYS=[
   // "Total Company EBITDA" tab (a manual, occasional upload) — so these fields MUST persist,
   // or company EBITDA disappears (dashes, 0 store months) on every reload until the next
   // full Generate with OneStream re-uploaded.
-  'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',
+  'ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly',
   'monthly_sales','ms_prev',                                       // OneStream sales (uploaded)
   'sss_cy','sss_py','sst_cy','sst_py',                             // OneStream raw CY/PY comp (uploaded) — for exact FZ SUMIF/SUMIF
   'sss','sst','sss_mo','sst_mo','tickets_mo','tickets',            // OneStream SSS/SST/Traffic (uploaded) — used for MSF per-store display
@@ -4718,7 +4747,7 @@ function _saveDeltaToLS(){
   // month's OneStream/SSS&SST export (see parseOneStream's stale-clear blocks) — must stay
   // cleared on reload, not have the old value silently restored by the merge-with-previous
   // logic below.
-  const FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',
+  const FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly',
     'monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']);
 
   const delta={
@@ -4889,7 +4918,7 @@ async function saveState(){
   // drops out of this month's OneStream/SSS&SST export (see parseOneStream's stale-clear
   // blocks) clears fully on reload too — otherwise the omitted key would leave whatever value
   // was baked into the SR_DEFAULT baseline from an earlier Generate untouched.
-  const DELTA_FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct',
+  const DELTA_FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly',
     'monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']);
   const delta={savedAt};
   let nStores=0;
