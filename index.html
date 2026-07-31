@@ -4837,7 +4837,13 @@ function _applyDelta(delta){
 // total localStorage usage stays well under the 5 MB limit.
 const ALIGN_SNAP_KEYS=new Set([
   // status is MDS Overview-sourced (col K) — see MDS_SNAP_KEYS — not Alignment.
-  'plk','country','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open',
+  // align_fru (REPORT_UNIT_NM) MUST be persisted: it is col AA of the F2F formula (the store's
+  // current franchisee). Without it in this set, align_fru existed only in memory for the
+  // session that parsed the Alignment file — so uploading Agreement View on its own (or after
+  // any page reload) computed F2F with AA=null, making AA<>AB true for every Finalized row and
+  // collapsing the result to that row's raw effective date for hundreds of stores. It also left
+  // parseAgree's quick-scan aaByPlk lookup (which reads align_fru out of this snap) always empty.
+  'plk','country','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open','align_fru',
 ]);
 const MDS_SNAP_KEYS=new Set([
   // orig_open covered by align snap; fa_exp covered by agree snap — omitted to save space.
