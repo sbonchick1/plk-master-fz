@@ -3861,11 +3861,16 @@ function buildFR(){
   const arsAll=SR.map(s=>s.ann_ars).filter(v=>v!=null);
   const sysAvgArs=arsAll.length?arsAll.reduce((a,b)=>a+b,0)/arsAll.length:null;
 
-  // Group by FRU (Reporting Unit = MSF col C)
+  // Group by FRU (Reporting Unit = MSF col C).
+  // Key is case-insensitively normalized — Excel's SUMIF/AVERAGEIF/COUNTIF-by-FRU comparisons
+  // are case-insensitive, so "Parikh, Amish & Ashish" and "parikh, amish & ashish" must land in
+  // the SAME group, not split into two FZ Summary rows. Display label keeps the first-seen
+  // original casing (g.fru), same convention already used for g.op/g.fg below.
   const fruMap={};
   SR.forEach(s=>{
-    const key=s.fru||'Unknown';
-    if(!fruMap[key]) fruMap[key]={fru:key,op:'',fg:'',divSet:new Set(),stores:[]};
+    const rawFru=s.fru||'Unknown';
+    const key=rawFru.trim().toLowerCase();
+    if(!fruMap[key]) fruMap[key]={fru:rawFru,op:'',fg:'',divSet:new Set(),stores:[]};
     const g=fruMap[key];
     // Use s.div if populated; fall back to 'Non-Trad' when loc_type indicates non-traditional
     // (some stores have blank region_nm but a NON-TRADITIONAL location_grp_cd)
@@ -3891,7 +3896,9 @@ function buildFR(){
       return fd!=='-'&&fd.slice(-4)==='2026';
     }).length;
     // H: DMA Count — COUNT(UNIQUE(FILTER(MSF DMA col H, FRU=$B6)))
-    const dmas=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:(s.dma||'')).filter(Boolean));
+    // Text-name fallback (when dma_id is null) is lowercased to match Excel's case-insensitive
+    // UNIQUE() — dma_id itself is numeric so casing doesn't apply to the common case.
+    const dmas=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:String(s.dma||'').trim().toLowerCase()).filter(Boolean));
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
     // Exclude null, empty, "-" and "NA"/"N/A" — these are Excel formula placeholders for
     // stores with no subcluster assignment, not real geographic sub-cluster names.
@@ -3970,10 +3977,11 @@ function buildDR(){
   const arsAll=SR.map(s=>s.ann_ars).filter(v=>v!=null);
   const sysAvgArs=arsAll.length?arsAll.reduce((a,b)=>a+b,0)/arsAll.length:null;
 
-  // Group by DMA ID (MSF col I). Fall back to DMA name if no ID.
+  // Group by DMA ID (MSF col I). Fall back to DMA name if no ID — lowercased so a casing
+  // difference in the name (dma_id itself is numeric, unaffected) doesn't split one DMA into two.
   const dmaMap={};
   SR.forEach(s=>{
-    const key=s.dma_id!=null?'id:'+s.dma_id:'nm:'+(s.dma||'Unknown');
+    const key=s.dma_id!=null?'id:'+s.dma_id:'nm:'+String(s.dma||'Unknown').trim().toLowerCase();
     if(!dmaMap[key]) dmaMap[key]={dma_id:s.dma_id,dma:s.dma||'',divSet:new Set(),stores:[]};
     const g=dmaMap[key];
     // D: Division — backend excludes "Non-Trad" (MATCH with <>Non-Trad filter)
@@ -3992,7 +4000,8 @@ function buildDR(){
     // DMAs like New Orleans span PLK Company + Central; surfacing "Multiple" is more useful.
     const div=g.divSet.size>1?'Multiple':[...g.divSet][0]||'';
     // F: # of Franchisees — COUNT(UNIQUE(FILTER(MSF FRU col D, DMA ID=$B6)))
-    const frus=new Set(ss.map(s=>s.fru).filter(Boolean));
+    // Dedup case-insensitively — same reasoning as FZ Summary's Sub-Cluster Count fix.
+    const frus=new Set(ss.map(s=>s.fru).filter(Boolean).map(v=>String(v).trim().toLowerCase()));
     // G: 2026 Openings — COUNTIFS(orig_open in 2026, DMA ID=$B6)
     // s.orig_open is usually a 'MM/DD/YYYY' string (via fmtD()), but pre-loaded/cached data can
     // carry it as a native Date object instead — run through fmtD() first so both are handled.
