@@ -801,8 +801,9 @@ function updateConfig(){
   // Sales start = EBITDA start (ms_prev adds one extra month to the left of SALES_MONTHS)
   const salesLbl =`Sales: ${MN[esMo]}-${yy(esYr)}→${MN[mo]}-${yy(yr)}`;
   const ebitdaLbl=`EBITDA: ${MN[esMo]}-${yy(esYr)}→${MN[eeMo]}-${yy(eeYr)}`;
-  const rentLbl  =`Rent: ${MN[eeMo]}-${yy(eeYr)}`;
-  document.getElementById('cfg-lbl').textContent=salesLbl+' | '+ebitdaLbl+' | '+rentLbl;
+  // Rent is now Trailing 12M (same window as EBITDA) — no longer a standalone single-month
+  // figure, so it doesn't need its own callout here; it's covered by the EBITDA window label.
+  document.getElementById('cfg-lbl').textContent=salesLbl+' | '+ebitdaLbl;
   // Rebuild the CA tab header so its month column labels (ms_prev + 12 sales + 12 EBITDA)
   // track the current period — they read live SALES_MONTHS/EBITDA_MONTHS via caDynHeader.
   if(document.getElementById('ca-thead')) buildCAHeader();
