@@ -3906,16 +3906,6 @@ function buildFR(){
     // NOTE: DMA Summary's own grouping (buildDR) still keys on dma_id — that is correct
     // there (it identifies the DMA rows themselves) and is deliberately left alone.
     const dmas=new Set(ss.map(s=>String(s.dma||'').trim().toLowerCase()).filter(v=>v!==''));
-    if(/parikh/i.test(g.fru||'')){
-      const byId=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:String(s.dma||'').trim().toLowerCase()).filter(Boolean));
-      const blankNameWithId=ss.filter(s=>String(s.dma||'').trim()===''&&s.dma_id!=null).map(s=>s.plk+':id='+s.dma_id);
-      const noId=ss.filter(s=>s.dma_id==null).map(s=>s.plk+':"'+(s.dma||'')+'"');
-      log('[DBG Parikh DMA] fru="'+g.fru+'" storeCount='+n
-        +' | NEW nameKeyed='+dmas.size+' | OLD idKeyed='+byId.size
-        +' | blankNameButHasId('+blankNameWithId.length+')=['+blankNameWithId.join(', ')+']'
-        +' | noDmaId('+noId.length+')=['+noId.join(', ')+']'
-        +' | uniqueNames=['+[...dmas].join(' | ')+']');
-    }
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
     // Exclude null, empty, "-" and "NA"/"N/A" — these are Excel formula placeholders for
     // stores with no subcluster assignment, not real geographic sub-cluster names.
