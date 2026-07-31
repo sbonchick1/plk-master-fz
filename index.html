@@ -1658,6 +1658,22 @@ function updateFSSHeaders(rtd, r3, r2){
   });
   // Rebuild the master header so the new labels show immediately
   buildMasterHeader();
+
+  // FZ_COLS/CA_COLS have no `k:` keys (plain positional header arrays) — patch by fixed
+  // index instead. Without this, these tabs kept showing whatever round labels were
+  // hardcoded at the time this file was last edited, regardless of the rounds actually
+  // being pulled/averaged (only the underlying values were live, not the header text).
+  if(r2) FZ_COLS[15].h=r2+' FSS';   // FZ_COLS[15] = "2025 R2 FSS" (avgR2 column)
+  if(r3) FZ_COLS[16].h=r3+' FSS';   // FZ_COLS[16] = "2025 R3 FSS" (avgR3 column)
+  if(r2) CA_COLS[59].h=r2+' FSS';           // CA_COLS[59] = "2025 R2 FSS"
+  if(r3) CA_COLS[60].h=r3+' FSS';           // CA_COLS[60] = "2025 R3 FSS"
+  if(rtd){
+    CA_COLS[61].h=rtd+' FSS';               // CA_COLS[61] = "2026 R1 FSS" (RTD column)
+    CA_COLS[62].h=rtd+' FSS Grade';         // CA_COLS[62] = "2026 Round 1 FSS Grade"
+  }
+  if(document.getElementById('fz-thead'))  buildSimpleHeader('fz-thead', FZ_COLS);
+  if(document.getElementById('dma-thead')) buildSimpleHeader('dma-thead', DMA_COLS);
+  if(document.getElementById('ca-thead'))  buildCAHeader();
 }
 
 // ═══════════════════════════════════════════════════
@@ -3879,8 +3895,16 @@ function buildFR(){
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
     // Exclude null, empty, "-" and "NA"/"N/A" — these are Excel formula placeholders for
     // stores with no subcluster assignment, not real geographic sub-cluster names.
+    // Dedup case-insensitively — Excel's UNIQUE()/FILTER(...=...) comparisons are
+    // case-insensitive for text, so "North"/"north" must count as ONE sub-cluster, not two.
     const _subExclude=new Set(['-','na','n/a','n/a','none','null']);
-    const subs=new Set(ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase())));
+    const subs=new Set(ss.map(s=>s.subcluster)
+      .filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase()))
+      .map(v=>String(v).trim().toLowerCase()));
+    if(/parikh/i.test(g.fru||'')){
+      const raw=ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!=='');
+      log('[DBG Parikh SUB] fru="'+g.fru+'" storeCount='+n+' subCount='+subs.size+' uniqueLower=['+[...subs].join(' | ')+'] rawValues=['+ss.map(s=>s.plk+':'+(s.subcluster==null?'null':'"'+s.subcluster+'"')).join(', ')+']');
+    }
     // J: Annualized ARS — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AJ:$AJ)
     // Use avg() (null-excluding, same as AVERAGEIF) — no >0 guard so a store displaying
     // $0 in MSF col AJ is included, keeping FZ Summary consistent with manual MSF average.
