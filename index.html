@@ -3901,10 +3901,6 @@ function buildFR(){
     const subs=new Set(ss.map(s=>s.subcluster)
       .filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase()))
       .map(v=>String(v).trim().toLowerCase()));
-    if(/parikh/i.test(g.fru||'')){
-      const raw=ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!=='');
-      log('[DBG Parikh SUB] fru="'+g.fru+'" storeCount='+n+' subCount='+subs.size+' uniqueLower=['+[...subs].join(' | ')+'] rawValues=['+ss.map(s=>s.plk+':'+(s.subcluster==null?'null':'"'+s.subcluster+'"')).join(', ')+']');
-    }
     // J: Annualized ARS — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AJ:$AJ)
     // Use avg() (null-excluding, same as AVERAGEIF) — no >0 guard so a store displaying
     // $0 in MSF col AJ is included, keeping FZ Summary consistent with manual MSF average.
