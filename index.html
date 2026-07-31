@@ -3896,10 +3896,26 @@ function buildFR(){
       const fd=fmtD(s.orig_open);
       return fd!=='-'&&fd.slice(-4)==='2026';
     }).length;
-    // H: DMA Count — COUNT(UNIQUE(FILTER(MSF DMA col H, FRU=$B6)))
-    // Text-name fallback (when dma_id is null) is lowercased to match Excel's case-insensitive
-    // UNIQUE() — dma_id itself is numeric so casing doesn't apply to the common case.
-    const dmas=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:String(s.dma||'').trim().toLowerCase()).filter(Boolean));
+    // H: DMA Count — per the manual formula, counts distinct DMA NAMES (MSF col H):
+    //   =SUM(--(LEN(UNIQUE(FILTER(MSF!$H:$H, MSF!$C:$C=$B6, ""))) > 0))
+    // Keyed on the name, NOT dma_id (col I): lowercased/trimmed to match Excel's
+    // case-insensitive UNIQUE(), blanks dropped to match the LEN(...)>0 test. Keying on
+    // dma_id instead over-counted — a store with an ID but a blank name always counted,
+    // two IDs sharing one name counted twice, and an FRU with only some stores carrying an
+    // ID could count the same DMA twice (once as 'id:618', once as 'houston').
+    // NOTE: DMA Summary's own grouping (buildDR) still keys on dma_id — that is correct
+    // there (it identifies the DMA rows themselves) and is deliberately left alone.
+    const dmas=new Set(ss.map(s=>String(s.dma||'').trim().toLowerCase()).filter(v=>v!==''));
+    if(/parikh/i.test(g.fru||'')){
+      const byId=new Set(ss.map(s=>s.dma_id!=null?'id:'+s.dma_id:String(s.dma||'').trim().toLowerCase()).filter(Boolean));
+      const blankNameWithId=ss.filter(s=>String(s.dma||'').trim()===''&&s.dma_id!=null).map(s=>s.plk+':id='+s.dma_id);
+      const noId=ss.filter(s=>s.dma_id==null).map(s=>s.plk+':"'+(s.dma||'')+'"');
+      log('[DBG Parikh DMA] fru="'+g.fru+'" storeCount='+n
+        +' | NEW nameKeyed='+dmas.size+' | OLD idKeyed='+byId.size
+        +' | blankNameButHasId('+blankNameWithId.length+')=['+blankNameWithId.join(', ')+']'
+        +' | noDmaId('+noId.length+')=['+noId.join(', ')+']'
+        +' | uniqueNames=['+[...dmas].join(' | ')+']');
+    }
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
     // Exclude null, empty, "-" and "NA"/"N/A" — these are Excel formula placeholders for
     // stores with no subcluster assignment, not real geographic sub-cluster names.
