@@ -3909,12 +3909,11 @@ function buildFR(){
     // I: Sub-Cluster Count — COUNT(UNIQUE(FILTER(MSF subcluster col J, FRU=$B6)))
     // Exclude null, empty, "-" and "NA"/"N/A" — these are Excel formula placeholders for
     // stores with no subcluster assignment, not real geographic sub-cluster names.
-    // Dedup case-insensitively — Excel's UNIQUE()/FILTER(...=...) comparisons are
-    // case-insensitive for text, so "North"/"north" must count as ONE sub-cluster, not two.
+    // Dedup on the RAW value — do NOT trim or lowercase. Excel's UNIQUE() does not trim, so
+    // "MD" and "MD " are two distinct values to the manual formula, and trailing whitespace is
+    // common in this export. Normalising here undercounted Parikh 24 -> 22 (reverted).
     const _subExclude=new Set(['-','na','n/a','n/a','none','null']);
-    const subs=new Set(ss.map(s=>s.subcluster)
-      .filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase()))
-      .map(v=>String(v).trim().toLowerCase()));
+    const subs=new Set(ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase())));
     // J: Annualized ARS — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AJ:$AJ)
     // Use avg() (null-excluding, same as AVERAGEIF) — no >0 guard so a store displaying
     // $0 in MSF col AJ is included, keeping FZ Summary consistent with manual MSF average.
