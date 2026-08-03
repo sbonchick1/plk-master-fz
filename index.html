@@ -660,7 +660,7 @@ const CA_COLS = [
   {h:'2026 R1 FSS',c:C.brown,w:80},{h:'2026 Round 1 FSS Grade',c:C.brown,w:80},
   {h:'RTD ACR',c:C.brown,w:70},{h:'RTD Total B3',c:C.brown,w:80},
   {h:'RTD Total Tickets',c:C.brown,w:100,fmt:'#'},{h:'RTD Car Count',c:C.brown,w:90,fmt:'#'},
-  {h:'RTD Driver Wait Time',c:C.brown,w:110},{h:'Current Round REV',c:C.brown,w:110},
+  {h:'RTD Driver Wait Time',c:C.brown,w:110,fmt:'time'},{h:'Current Round REV',c:C.brown,w:110},
   // RBI Alignment (4)
   {h:'DDL',c:C.medbrown,w:130},{h:'OP',c:C.medbrown,w:130},
   {h:'FBP',c:C.medbrown,w:130},{h:'GM',c:C.medbrown,w:130},
@@ -3834,7 +3834,11 @@ const CA_KEYS=[
   'sss','sst','tickets','sss_mo','sst_mo','tickets_mo',                                                       // 53-58
   'fss_r2','fss_r3','fss_rtd','fss_grade','acr','b3','total_tickets','car_count','wait_time','rev',           // 59-68
   'ddl','op_mgr','fbp','gm',                                                                                  // 69-72
-  'rvp','strategy_owner','orig_open','fa_exp','f2f','fg_num','rest_owned','total_rest_dma','fz_rest_dma','pct_ownership_dma', // 73-82
+  // ci 76 "FA Expiration" uses fa_exp_mds (MDS Overview col L) — the same field the MSF tab's
+  // FA Expiration column reads. It previously pointed at fa_exp (derived from Agreement View in
+  // parseAgree), so the two tabs showed different values under the same heading; fa_exp_mds was
+  // added later as the authoritative source for this column but CA_KEYS was never updated.
+  'rvp','strategy_owner','orig_open','fa_exp_mds','f2f','fg_num','rest_owned','total_rest_dma','fz_rest_dma','pct_ownership_dma', // 73-82
   'drive_thru_type','arch_type','loc_type','deal_type','ext_image','lat','lon','royalty','adfund',            // 83-91
 ];
 function buildCR(){
