@@ -2036,15 +2036,6 @@ function renderCARows(){
   const rentMonthlyMap=_caRentMonthlyMap();
   document.getElementById('ca-tbody').innerHTML=rows.map(row=>{
     const r=caConvertRow(row,rentMonthlyMap);
-    // TEMP DIAGNOSTIC (BUILD-MARKER-D): covers the CR -> displayed stage for PLK 2516, so
-    // together with the buildCR trace we can tell whether a wrong YTD SSS originates in SR,
-    // in the CR row, or in the conversion/formatting on the way to the cell.
-    if(row[1]===2516){
-      log('[DBG 2516 CA-RENDER BUILD-MARKER-D] CR row: sss(r54)='+row[54]+' sst(r55)='+row[55]
-        +' | after caConvertRow: sss='+r[54]+' sst='+r[55]
-        +' | formatted: sss='+fmtVal(caVal(r,53),CA_COLS[53].fmt)+' sst='+fmtVal(caVal(r,54),CA_COLS[54].fmt)
-        +' | header53="'+CA_COLS[53].h+'" header54="'+CA_COLS[54].h+'"');
-    }
     return '<tr>'+CA_COLS.map((col,i)=>{
       const v=caVal(r,i), fv=fmtVal(v,col.fmt);
       return '<td class="'+(isNeg(v)&&col.fmt?'neg':'')+'" title="'+String(fv).replace(/"/g,'&quot;')+'">'+fv+'</td>';
@@ -3872,17 +3863,6 @@ function buildCR(){
       // Drive-Thru Type (ci 83): a missing/blank value shows as "None" (not a dash) on the CA tab
       if(ci===83 && (v==null||v===''||v==='-')) v='None';
       row[ri(ci)]=v;
-    }
-    // TEMP DIAGNOSTIC (BUILD-MARKER-D): PLK 2516 shows -12.7% YTD SSS on the CA tab but 5% on
-    // MSF, even though both read s.sss. Logs the SR value and the value actually written into
-    // the CR row, plus a call counter, to distinguish a stale CR from a render/read problem.
-    if(s.plk===2516){
-      window._crBuildCount=(window._crBuildCount||0)+1;
-      log('[DBG 2516 CA BUILD-MARKER-D] buildCR call #'+window._crBuildCount
-        +' | SR: sss='+s.sss+' sst='+s.sst
-        +' | written to row: sss(ci53->r54)='+row[54]+' sst(ci54->r55)='+row[55]
-        +' | CA_KEYS[53]='+CA_KEYS[53]+' CA_KEYS[54]='+CA_KEYS[54]
-        +' | country='+s.country+' fru="'+(s.fru||'')+'"');
     }
     rows.push(row);
   });
