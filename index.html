@@ -3766,7 +3766,25 @@ function calculateFields(){
   // a non-null value when one is available, regardless of what PY_DEFAULT contains.
   const PY_KEYS=['fy2021','fy2022','fy2023','fy2024','fy2025'];
   SR.forEach(s=>{
+    const pyRow=PY[String(s.plk)];
+    const _dbgFY=s.plk===13351?{sr:PY_KEYS.map(k=>s[k]),py:pyRow?PY_KEYS.map(k=>pyRow[k]):null}:null;
+    // ── PY -> SR backfill (the missing half of this sync).
+    // Adopted only when SR has NO FY data at all for the store. That covers a store which was
+    // absent from SR at the moment parsePY ran — e.g. closed then, so parseAlignment's
+    // Open/Temp-Closed filter excluded it — because parsePY's mirror step is guarded by
+    // `if(srStore)` and silently skips it, leaving the values in PY alone. Everything that
+    // reads SR (the CA tab via buildCR, the CA export, and the PY snapshot) then showed blank
+    // while the MSF tab and MSF export, which read PY first, showed the value.
+    // Deliberately scoped to "SR has nothing": a store with real current SR data is never
+    // overwritten by PY, whose contents include PY_DEFAULT baked into the HTML and therefore
+    // possibly of an older vintage. FY sales are historical and effectively static, so
+    // adopting them when SR is empty is safe; overwriting live values would not be.
+    if(pyRow && !PY_KEYS.some(k=>s[k]!=null)){
+      PY_KEYS.forEach(k=>{ if(pyRow[k]!=null) s[k]=pyRow[k]; });
+    }
+    // ── SR -> PY sync (pre-existing, unchanged).
     const hasAny=PY_KEYS.some(k=>s[k]!=null);
+    if(_dbgFY) log('[DBG 13351 FY BUILD-MARKER-C] SRbefore=['+_dbgFY.sr.join(',')+'] PY=['+(_dbgFY.py?_dbgFY.py.join(','):'NO PY ENTRY')+'] SRafter=['+PY_KEYS.map(k=>s[k]).join(',')+'] backfilled='+(_dbgFY.sr.every(v=>v==null)&&PY_KEYS.some(k=>s[k]!=null)));
     if(!hasAny) return;
     const existing=PY[String(s.plk)]||{};
     PY_KEYS.forEach(k=>{ if(s[k]!=null) existing[k]=s[k]; });
