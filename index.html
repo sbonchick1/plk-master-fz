@@ -3767,7 +3767,6 @@ function calculateFields(){
   const PY_KEYS=['fy2021','fy2022','fy2023','fy2024','fy2025'];
   SR.forEach(s=>{
     const pyRow=PY[String(s.plk)];
-    const _dbgFY=s.plk===13351?{sr:PY_KEYS.map(k=>s[k]),py:pyRow?PY_KEYS.map(k=>pyRow[k]):null}:null;
     // ── PY -> SR backfill (the missing half of this sync).
     // Adopted only when SR has NO FY data at all for the store. That covers a store which was
     // absent from SR at the moment parsePY ran — e.g. closed then, so parseAlignment's
@@ -3784,7 +3783,6 @@ function calculateFields(){
     }
     // ── SR -> PY sync (pre-existing, unchanged).
     const hasAny=PY_KEYS.some(k=>s[k]!=null);
-    if(_dbgFY) log('[DBG 13351 FY BUILD-MARKER-C] SRbefore=['+_dbgFY.sr.join(',')+'] PY=['+(_dbgFY.py?_dbgFY.py.join(','):'NO PY ENTRY')+'] SRafter=['+PY_KEYS.map(k=>s[k]).join(',')+'] backfilled='+(_dbgFY.sr.every(v=>v==null)&&PY_KEYS.some(k=>s[k]!=null)));
     if(!hasAny) return;
     const existing=PY[String(s.plk)]||{};
     PY_KEYS.forEach(k=>{ if(s[k]!=null) existing[k]=s[k]; });
@@ -3932,20 +3930,6 @@ function buildFR(){
     // common in this export. Normalising here undercounted Parikh 24 -> 22 (reverted).
     const _subExclude=new Set(['-','na','n/a','n/a','none','null']);
     const subs=new Set(ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase())));
-    if(/parikh/i.test(g.fru||'')){
-      // BUILD-MARKER-B: if this token is missing from the log, the browser is running an older
-      // cached build and any count you see on screen is NOT from this code.
-      const kept=ss.map(s=>s.subcluster).filter(v=>v!=null&&String(v).trim()!==''&&!_subExclude.has(String(v).trim().toLowerCase()));
-      const nRaw      =new Set(kept).size;
-      const nTrim     =new Set(kept.map(v=>String(v).trim())).size;
-      const nLower    =new Set(kept.map(v=>String(v).toLowerCase())).size;
-      const nTrimLower=new Set(kept.map(v=>String(v).trim().toLowerCase())).size;
-      // JSON.stringify makes any leading/trailing whitespace visible as "MD " vs "MD"
-      const distinctRaw=[...new Set(kept)].map(v=>JSON.stringify(v)).sort();
-      log('[DBG Parikh SUB v2 BUILD-MARKER-B] fru="'+g.fru+'" storeCount='+n+' keptValues='+kept.length
-        +' || counts: RAW(live)='+nRaw+' trimOnly='+nTrim+' lowerOnly='+nLower+' trim+lower='+nTrimLower
-        +' || distinctRaw('+distinctRaw.length+')=['+distinctRaw.join(' , ')+']');
-    }
     // J: Annualized ARS — AVERAGEIF(MSF!$C:$C, $B6, MSF!$AJ:$AJ)
     // Use avg() (null-excluding, same as AVERAGEIF) — no >0 guard so a store displaying
     // $0 in MSF col AJ is included, keeping FZ Summary consistent with manual MSF average.
