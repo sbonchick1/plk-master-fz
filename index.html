@@ -2585,8 +2585,21 @@ function findTimeRowDynamic(aoa){
   return {startCol, labels};
 }
 
+// ── Which upload parsers have actually run in this page session.
+// Persistence uses this to decide whether a null in SR means "the file says this is blank"
+// (safe to persist as null) or "we never parsed that file, so SR simply has nothing"
+// (must NOT be persisted as null). Without the distinction, a Generate that omits a given
+// input writes explicit nulls for that input's fields, which overwrite the values baked into
+// SR_DEFAULT on the next reload and permanently destroy good data — this is what wiped every
+// OneStream column when Generate was run with only Alignment/FG/Agreement/MDS uploaded.
+// Never reset: it starts empty on each page load, which is exactly the case that needs
+// protecting. Set at parser entry, so a file that was selected but failed to parse cleanly
+// still counts as "the user intended to refresh this source".
+const PARSED_SOURCES=new Set();
+
 // ─── Alignment file ────────────────────────────────
 async function parseAlignment(file){
+  PARSED_SOURCES.add('alignment');
   const {aoa}=await readXlsxAoa(file);
   const keywords=['rest_no','status_cd','region_nm','zone_mngr','strategy_owner'];
   const hr=findHeaderRow(aoa,keywords,2);
@@ -2709,6 +2722,7 @@ async function parseDevAlign(file){
 //              stored as shared strings like "                1,059,775  "
 //   0 = no data (store not open that year) — treat as null
 async function parsePY(file){
+  PARSED_SOURCES.add('py_sales');
   const {aoa}=await readXlsxAoa(file);
   if(!aoa||aoa.length<10){log('⚠ PY Sales: file too short'); return;}
 
@@ -2890,6 +2904,7 @@ async function parsePL(file){
 
 // ─── MDS Overview (XLSX) ───────────────────────────
 async function parseMDS(file){
+  PARSED_SOURCES.add('mds');
   const {aoa}=await readXlsxAoa(file);
   // Exact column headers from MDS Overview as verified in backend formulas
   const keywords=['plk#','reporting unit','reporting operator','franchise group'];
@@ -3003,6 +3018,7 @@ async function parseUrb(file,id){
 // The three blocks are read independently by their own PLK column, so they don't need to be
 // row-aligned with each other.
 async function parseMP(file){
+  PARSED_SOURCES.add('mp');
   const {aoa}=await readXlsxAoa(file);
   const hr=findHeaderRow(aoa,['rest #','urbanicity','subcluster'],1);
   if(hr<0){log('⚠ Market Planning: header row not found — expected "Rest #"/"Urbanicity"/"Subcluster" columns'); return;}
@@ -3146,6 +3162,7 @@ async function parseFX(file){
 
 // ─── Agreement View (CSV) ──────────────────────────
 async function parseAgree(file){
+  PARSED_SOURCES.add('agree');
   const {aoa}=await readCsvAoa(file);
   // Verified columns from actual Agreement View CSV:
   //   Restaurant Number (col A) = PLK#
@@ -3389,6 +3406,7 @@ async function parseDealType(file){
 }
 
 async function parseOneStream(file){
+  PARSED_SOURCES.add('onestream');
   return new Promise((resolve,reject)=>{
     const reader=new FileReader();
     reader.onload=function(e){
@@ -4796,14 +4814,21 @@ function _saveDeltaToLS(){
   let existingDelta={};
   try{ const raw=localStorage.getItem(LS_KEY); if(raw) existingDelta=JSON.parse(raw); }catch(e){}
 
-  // These must NOT inherit a stale value from the previous delta when the current in-memory
-  // value is null — e.g. a company store cleared of pre-acquisition franchisee EBITDA (see
-  // parseOneStream's Total Company EBITDA section), or a store that dropped out of this
-  // month's OneStream/SSS&SST export (see parseOneStream's stale-clear blocks) — must stay
-  // cleared on reload, not have the old value silently restored by the merge-with-previous
-  // logic below.
-  const FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly',
-    'monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']);
+  // A field is force-nulled here ONLY when its source was actually resolved this session, so a
+  // genuinely-cleared value (e.g. a company store stripped of pre-acquisition franchisee
+  // EBITDA, or a store that dropped out of this month's OneStream/SSS&SST export) stays
+  // cleared rather than being restored by the merge-with-previous below — while a source that
+  // was never loaded leaves its keys omitted, so the merge preserves the prior values instead
+  // of destroying them. Mirrors the same gating in saveState().
+  const FORCE_NULL_KEYS=new Set();
+  if(window._profRaw){
+    ['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly']
+      .forEach(k=>FORCE_NULL_KEYS.add(k));
+  }
+  if(PARSED_SOURCES.has('onestream')){
+    ['monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']
+      .forEach(k=>FORCE_NULL_KEYS.add(k));
+  }
 
   const delta={
     savedAt:new Date().toLocaleString('en-US',{month:'short',day:'numeric',year:'numeric',hour:'numeric',minute:'2-digit'})
@@ -4939,48 +4964,55 @@ async function saveState(){
   }
 
   // ── 1. Per-source snaps (small — each only its own fields) ─────────────────
-  // forceKeys: parseAlignment() has already resolved the correct current value for every field
-  // by this point (blank cell -> null, missing column -> preserved prior value) — so whatever is
-  // null here is the correct state to persist. Without forceKeys, the sparse/omit-if-null write
-  // would let a field that just went blank (e.g. OP/RVP/FBP/GM reassigned to nobody) keep
-  // showing its stale prior value on the next reload.
+  // Each snap's forceKeys are applied ONLY when that source was actually parsed this session
+  // (see PARSED_SOURCES). When the file was parsed, a null in SR means "the file says blank"
+  // and must persist as null so a cleared value doesn't resurface. When it was NOT parsed, a
+  // null only means "SR never received this data" — persisting that would overwrite the
+  // SR_DEFAULT baseline on reload and destroy good values, which is what wiped royalty/adfund
+  // for reopened stores and every OneStream column.
+  const _fk=(src,keys)=>PARSED_SOURCES.has(src)?new Set(keys):null;
+
+  // Alignment: blank cell -> null, missing column -> prior value preserved, so a parsed null is
+  // the correct state (e.g. OP/RVP/FBP/GM reassigned to nobody must not keep the old name).
   _writeSnap(LS_SNAP_ALIGN_KEY, ALIGN_SNAP_KEYS, 'Align snap',
-    new Set(['country','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open']));
-  // forceKeys: fa_exp_mds/fru/op/fg are written explicitly (even as null) so a store that goes
-  // blank for these in MDS Overview — e.g. a franchisee store that just transferred to company
-  // ownership and no longer has a reporting unit/operator/group listed — clears fully after a
-  // full Generate too, not just the quick scan (otherwise the prior franchisee's name/FRU could
-  // resurface on the next reload). status is included since MDS Overview (not Alignment) is now
-  // its sole source.
-  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap', new Set(['fa_exp_mds','fru','op','fg','status','fg_num','postal',
+    _fk('alignment',['country','div','dma_id','dma','rvp','strategy_owner','fbp','op_mgr','gm','loc_type','orig_open']));
+  // MDS: a store that transferred to company ownership and no longer lists a reporting
+  // unit/operator/group must clear rather than keep the prior franchisee's name.
+  _writeSnap(LS_SNAP_MDS_KEY,   MDS_SNAP_KEYS,   'MDS snap',
+    _fk('mds',['fa_exp_mds','fru','op','fg','status','fg_num','postal',
     'address','city','state','county','drive_thru_type','arch_type','lat','lon','ext_image','royalty','adfund']));
-  // forceKeys: subcluster/mp_pop/urb are written explicitly (even as null) so a store that
-  // drops out of the Market Planning file — or whose value there goes blank — clears fully,
-  // with no stale value surviving a reload.
-  _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap', new Set(['subcluster','mp_pop','urb']));
+  // Market Planning: a store dropping out of the file, or going blank in it, should clear.
+  _writeSnap(LS_SNAP_MP_KEY,    MP_SNAP_KEYS,    'MP snap', _fk('mp',['subcluster','mp_pop','urb']));
   _writeSnap(LS_SNAP_DEAL_KEY,  DEAL_SNAP_KEYS,  'Deal snap');
   _writeSnap(LS_SNAP_DEV_KEY,   DEV_SNAP_KEYS,   'DevAlign snap');
-  // forceKeys: f2f/fa_exp are written explicitly (even as null) so a store whose F2F date/FA
-  // expiration is no longer computed (e.g. no qualifying transfer this month, or the store
-  // isn't in this month's Agreement View at all) clears fully after a full Generate too, not
-  // just the quick scan. parseAgree() has already resolved the correct current f2f/fa_exp for
-  // every store by this point — the F2F computation itself is untouched, only how it persists.
-  _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap', new Set(['f2f','fa_exp']));
-  // forceKeys: fy2021-fy2025 are written explicitly (even as null) so a store that drops out
-  // of the PY Sales file clears fully after a full Generate too, not just leaving a prior
-  // upload's figures in place.
-  _writeSnap(LS_SNAP_PY_KEY,    PY_SNAP_KEYS,    'PY snap', new Set(['fy2021','fy2022','fy2023','fy2024','fy2025']));
+  // Agreement View: a store with no qualifying transfer this month, or absent from the file,
+  // should clear. The F2F computation itself is untouched — only how the result persists.
+  _writeSnap(LS_SNAP_AGREE_KEY, AGREE_SNAP_KEYS, 'Agree snap', _fk('agree',['f2f','fa_exp']));
+  // PY Sales: a store dropping out of the file should clear rather than keep prior figures.
+  _writeSnap(LS_SNAP_PY_KEY,    PY_SNAP_KEYS,    'PY snap', _fk('py_sales',['fy2021','fy2022','fy2023','fy2024','fy2025']));
 
   // NOTE: FG snap (plk_snap_fg_v1) is written only by the FG background scan on file
   // upload — not here. After Generate, fg + op are already embedded in the MDS snap.
 
   // ── 2. Financial delta (P&L + OneStream — written LAST, largest item) ──────
-  // forceKeys: OneStream-sourced fields are written explicitly (even as null) so a store that
-  // drops out of this month's OneStream/SSS&SST export (see parseOneStream's stale-clear
-  // blocks) clears fully on reload too — otherwise the omitted key would leave whatever value
-  // was baked into the SR_DEFAULT baseline from an earlier Generate untouched.
-  const DELTA_FORCE_NULL_KEYS=new Set(['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly',
-    'monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']);
+  // forceKeys: a field is written explicitly as null ONLY when its source was actually
+  // resolved this session, so "the source says blank" clears while "we never loaded that
+  // source" leaves the key omitted and the prior value intact. Writing nulls unconditionally
+  // meant a Generate without the OneStream file wrote nulls over every OneStream column,
+  // which then overwrote the SR_DEFAULT baseline on reload and destroyed the data.
+  const DELTA_FORCE_NULL_KEYS=new Set();
+  // Profitability is a LIVE Snowflake pull re-fetched every page load. Whenever the raw pull
+  // is in memory, applyProfitability() has resolved every store (setting null where a
+  // franchisee is absent from the pull), so these are authoritative and safe to force-null.
+  if(window._profRaw){
+    ['ebitda_monthly','net_sales_monthly','cur_rent','cur_rent_pct','rent_monthly']
+      .forEach(k=>DELTA_FORCE_NULL_KEYS.add(k));
+  }
+  // OneStream is an UPLOAD — only authoritative when the file was parsed this session.
+  if(PARSED_SOURCES.has('onestream')){
+    ['monthly_sales','ms_prev','sss_cy','sss_py','sst_cy','sst_py','sss','sst','sss_mo','sst_mo','tickets_mo','tickets']
+      .forEach(k=>DELTA_FORCE_NULL_KEYS.add(k));
+  }
   const delta={savedAt};
   let nStores=0;
   SR.forEach(s=>{
