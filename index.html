@@ -2778,7 +2778,11 @@ async function parsePY(file){
   // that drops out (closed, or excluded from this export) keeps showing a prior upload's values.
   let nClearedPY=0;
   SR.forEach(s=>{
-    if(!foundInPY.has(s.plk) && (s.fy2021!=null||s.fy2022!=null||s.fy2023!=null||s.fy2024!=null||s.fy2025!=null)){
+    // Number(s.plk): the Set holds parseInt values, and Set.has uses strict equality — s.plk
+    // can be a string, in which case has("64") is false for an added 64 and EVERY store looks
+    // absent, wiping the data the loop above just wrote. (srMap[plk] is unaffected because
+    // object keys coerce to strings, which is why the update loop succeeds regardless.)
+    if(!foundInPY.has(Number(s.plk)) && (s.fy2021!=null||s.fy2022!=null||s.fy2023!=null||s.fy2024!=null||s.fy2025!=null)){
       s.fy2021=null; s.fy2022=null; s.fy2023=null; s.fy2024=null; s.fy2025=null;
       delete PY[String(s.plk)];
       nClearedPY++;
@@ -3476,7 +3480,8 @@ async function parseOneStream(file){
             // out of the file keeps showing last month's figures indefinitely.
             let nClearedOneStream=0;
             SR.forEach(s=>{
-              if(!foundInOneStream.has(s.plk) && (s.monthly_sales!=null||s.ms_prev!=null||s.sss_cy!=null||s.sss_py!=null||s.sst_cy!=null||s.sst_py!=null)){
+              // Number(s.plk) — see the note in parsePY: Set.has is strict, s.plk may be a string.
+              if(!foundInOneStream.has(Number(s.plk)) && (s.monthly_sales!=null||s.ms_prev!=null||s.sss_cy!=null||s.sss_py!=null||s.sst_cy!=null||s.sst_py!=null)){
                 s.monthly_sales=null; s.ms_prev=null; s.sss_cy=null; s.sss_py=null; s.sst_cy=null; s.sst_py=null;
                 nClearedOneStream++;
               }
@@ -3546,11 +3551,12 @@ async function parseOneStream(file){
             // — otherwise it keeps showing a prior month's non-zero figure indefinitely.
             let nClearedSSSST=0, nClearedTickets=0;
             SR.forEach(s=>{
-              if(!foundInSSSST.has(s.plk) && (s.sss_mo!=null||s.sss!=null||s.sst_mo!=null||s.sst!=null||s.tickets_mo!=null)){
+              // Number(s.plk) — see the note in parsePY: Set.has is strict, s.plk may be a string.
+              if(!foundInSSSST.has(Number(s.plk)) && (s.sss_mo!=null||s.sss!=null||s.sst_mo!=null||s.sst!=null||s.tickets_mo!=null)){
                 s.sss_mo=null; s.sss=null; s.sst_mo=null; s.sst=null; s.tickets_mo=null;
                 nClearedSSSST++;
               }
-              if(!foundInTickets.has(s.plk) && s.tickets!=null){ s.tickets=null; nClearedTickets++; }
+              if(!foundInTickets.has(Number(s.plk)) && s.tickets!=null){ s.tickets=null; nClearedTickets++; }
             });
             if(nClearedSSSST>0)  log('  SSS&SST sheet: cleared stale SSS/SST for '+nClearedSSSST+' store(s) not in this file');
             if(nClearedTickets>0) log('  SSS&SST sheet: cleared stale YTD Avg Tickets for '+nClearedTickets+' store(s) not in this file');
@@ -3600,7 +3606,8 @@ async function parseOneStream(file){
         let nClearedNewCompany=0;
         SR.forEach(s=>{
           const isCompanyNow = s.fru==='Company' || (s.fru&&/plk company/i.test(s.fru)) || (s.div&&/plk company/i.test(s.div));
-          if(isCompanyNow && !foundInCoEbitda.has(s.plk)){
+          // Number(s.plk) — see the note in parsePY: Set.has is strict, s.plk may be a string.
+          if(isCompanyNow && !foundInCoEbitda.has(Number(s.plk))){
             if(s.ebitda_monthly!=null||s.net_sales_monthly!=null||s.cur_rent!=null||s.cur_rent_pct!=null||s.rent_monthly!=null) nClearedNewCompany++;
             s.ebitda_monthly=null; s.net_sales_monthly=null; s.cur_rent=null; s.cur_rent_pct=null; s.rent_monthly=null;
           }
